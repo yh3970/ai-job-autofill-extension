@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ApplyPilot</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body class="popup">
+    <main>
+      <header class="topbar">
+        <div>
+          <h1>ApplyPilot</h1>
+          <p>一键填写网申表单</p>
+        </div>
+        <button id="openOptions" class="icon-button" title="编辑 Profile">⚙</button>
+      </header>
+
+      <section class="status" id="status">正在检查当前页面...</section>
+
+      <div class="actions">
+        <button id="fillPage" class="primary">智能填充当前页面</button>
+        <button id="learnPage">记住当前填写内容</button>
+      </div>
+
+      <section class="result" id="result"></section>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

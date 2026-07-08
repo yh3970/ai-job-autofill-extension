@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ApplyPilot Test Form</title>
+    <style>
+      body {
+        margin: 0;
+        background: #f6f7f9;
+        color: #18202a;
+        font: 15px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      main {
+        width: min(760px, calc(100% - 32px));
+        margin: 32px auto;
+        border: 1px solid #dce1e8;
+        border-radius: 8px;
+        background: #fff;
+        padding: 24px;
+      }
+
+      h1 {
+        margin: 0 0 20px;
+        font-size: 24px;
+      }
+
+      form {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        font-weight: 650;
+      }
+
+      input,
+      textarea {
+        border: 1px solid #dce1e8;
+        border-radius: 8px;
+        padding: 9px 10px;
+        font: inherit;
+      }
+
+      .wide {
+        grid-column: 1 / -1;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>测试申请表</h1>
+      <form>
+        <label>First Name<input name="first_name" autocomplete="given-name"></label>
+        <label>Last Name<input name="last_name" autocomplete="family-name"></label>
+        <label>Email Address<input type="email" name="email"></label>
+        <label>Phone Number<input name="phone"></label>
+        <label>LinkedIn Profile<input name="linkedin"></label>
+        <label>Current Location<input name="location"></label>
+        <label class="wide">Skills<textarea name="skills" rows="3"></textarea></label>
+        <label class="wide">Work Experience<textarea name="experience" rows="5"></textarea></label>
+        <label class="wide">Why are you interested in this role?<textarea name="motivation" rows="4"></textarea></label>
+      </form>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ApplyPilot Agent Test</title>
+    <style>
+      body {
+        margin: 0;
+        background: #f6f7f9;
+        color: #17202a;
+        font: 15px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      main {
+        width: min(920px, calc(100% - 32px));
+        margin: 32px auto;
+        border: 1px solid #dce1e8;
+        border-radius: 8px;
+        background: #fff;
+        padding: 24px;
+      }
+
+      section {
+        border-top: 1px solid #e5e9f0;
+        padding-top: 18px;
+        margin-top: 18px;
+      }
+
+      h1,
+      h2 {
+        margin: 0 0 14px;
+      }
+
+      .row,
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        font-weight: 650;
+      }
+
+      input,
+      select,
+      textarea {
+        border: 1px solid #dce1e8;
+        border-radius: 8px;
+        padding: 9px 10px;
+        font: inherit;
+      }
+
+      textarea,
+      .wide {
+        grid-column: 1 / -1;
+      }
+
+      button {
+        margin-top: 12px;
+        border: 1px solid #246bfe;
+        border-radius: 8px;
+        background: #246bfe;
+        color: #fff;
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>ApplyPilot Agent Test Form</h1>
+
+      <section>
+        <h2>基础信息 / Personal Information</h2>
+        <div class="grid">
+          <label>Full Name<input name="full_name"></label>
+          <label>Email Address<input name="email"></label>
+          <label>Phone Number<input name="phone"></label>
+          <label>Current Location<input name="location"></label>
+          <label>Nationality
+            <select name="nationality">
+              <option></option>
+              <option>China</option>
+              <option>United States</option>
+              <option>Canada</option>
+            </select>
+          </label>
+          <label>LinkedIn<input name="linkedin"></label>
+        </div>
+      </section>
+
+      <section id="education-section">
+        <h2>教育经历 / Education</h2>
+        <div id="education-rows">
+          <div class="row education-item">
+            <label>School<input name="school"></label>
+            <label>Degree<input name="degree"></label>
+            <label>Major<input name="major"></label>
+            <label>Graduation Date<input name="graduation"></label>
+          </div>
+        </div>
+        <button type="button" id="add-education">添加教育经历</button>
+      </section>
+
+      <section id="experience-section">
+        <h2>实习经历 / Internship Experience</h2>
+        <div id="experience-rows">
+          <div class="row experience-item">
+            <label>Company<input name="company"></label>
+            <label>Position Title<input name="title"></label>
+            <label>Start Date<input name="start"></label>
+            <label>End Date<input name="end"></label>
+            <label class="wide">Responsibilities<textarea name="description" rows="3"></textarea></label>
+          </div>
+        </div>
+        <button type="button" id="add-experience">新增实习经历</button>
+      </section>
+
+      <section>
+        <h2>开放式问题 / Open Questions</h2>
+        <label>Why are you interested in this role?<textarea name="motivation" rows="5"></textarea></label>
+      </section>
+    </main>
+
+    <script>
+      document.querySelector("#add-education").addEventListener("click", () => {
+        const row = document.querySelector(".education-item").cloneNode(true);
+        row.querySelectorAll("input").forEach((input) => input.value = "");
+        document.querySelector("#education-rows").appendChild(row);
+      });
+
+      document.querySelector("#add-experience").addEventListener("click", () => {
+        const row = document.querySelector(".experience-item").cloneNode(true);
+        row.querySelectorAll("input, textarea").forEach((input) => input.value = "");
+        document.querySelector("#experience-rows").appendChild(row);
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ApplyPilot Profile</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="options-shell">
+      <header class="page-header">
+        <div>
+          <h1>ApplyPilot Profile</h1>
+          <p>上传中英文简历自动生成 Profile，国内外申请页面都能一键填充。</p>
+        </div>
+        <button id="saveProfile" class="primary">保存 Profile</button>
+      </header>
+
+      <section class="panel">
+        <h2>智能导入简历</h2>
+        <p class="hint">支持 DOCX、PDF、TXT。解析在本地完成，导入结果会先填入下方 Profile，保存后生效。</p>
+        <div class="upload-box">
+          <input id="resumeFile" type="file" accept=".docx,.pdf,.txt,.text,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain">
+          <button id="importResume">从简历自动填写 Profile</button>
+          <span id="importStatus"></span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>基础信息</h2>
+        <div class="grid">
+          <label>名<input data-path="personal.firstName"></label>
+          <label>中间名<input data-path="personal.middleName"></label>
+          <label>姓<input data-path="personal.lastName"></label>
+          <label>姓名<input data-path="personal.fullName"></label>
+          <label>中文名<input data-path="personal.chineseName"></label>
+          <label>Preferred Name<input data-path="personal.preferredName"></label>
+          <label>邮箱<input data-path="personal.email" type="email"></label>
+          <label>电话<input data-path="personal.phone"></label>
+          <label>所在地<input data-path="personal.location"></label>
+          <label>国籍<input data-path="personal.nationality"></label>
+          <label class="wide">地址<input data-path="personal.address"></label>
+          <label>LinkedIn<input data-path="personal.linkedin"></label>
+          <label>GitHub<input data-path="personal.github"></label>
+          <label>作品集/个人网站<input data-path="personal.portfolio"></label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>求职信息</h2>
+        <div class="grid">
+          <label class="wide">个人简介<textarea data-path="summary" rows="4"></textarea></label>
+          <label>工作许可/签证<input data-path="workAuthorization"></label>
+          <label>是否需要签证担保<input data-path="visaSponsorship"></label>
+          <label>是否接受搬迁<input data-path="relocation"></label>
+          <label>期望薪资<input data-path="desiredSalary"></label>
+          <label>到岗时间<input data-path="noticePeriod"></label>
+          <label>可入职日期<input data-path="availabilityDate"></label>
+          <label class="wide">技能，使用逗号分隔<textarea id="skills" rows="3"></textarea></label>
+          <label class="wide">语言能力，使用逗号分隔<textarea id="languages" rows="2"></textarea></label>
+          <label class="wide">证书，使用逗号分隔<textarea id="certifications" rows="2"></textarea></label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-title">
+          <h2>教育经历</h2>
+          <button data-add="education">添加</button>
+        </div>
+        <div id="educationList" class="list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-title">
+          <h2>工作经历</h2>
+          <button data-add="experience">添加</button>
+        </div>
+        <div id="experienceList" class="list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-title">
+          <h2>项目经历</h2>
+          <button data-add="projects">添加</button>
+        </div>
+        <div id="projectsList" class="list"></div>
+      </section>
+
+      <section class="panel">
+        <h2>简历文本</h2>
+        <p class="hint">可以直接粘贴简历全文。后续遇到不确定问题时，这里会作为语义匹配的备用信息源。</p>
+        <textarea data-path="resumeText" rows="10"></textarea>
+      </section>
+
+      <section class="panel">
+        <h2>记忆库</h2>
+        <p class="hint">当你在页面手动填写字段并点击“记住当前填写内容”后，映射会保存在这里。</p>
+        <div class="actions-row">
+          <button id="clearMemory">清空记忆库</button>
+          <span id="memoryCount"></span>
+        </div>
+      </section>
+
+      <div id="toast" class="toast" hidden></div>
+    </main>
+    <script src="resumeParser.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>
