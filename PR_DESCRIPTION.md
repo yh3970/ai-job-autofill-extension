@@ -2,59 +2,110 @@
 
 ## 1. Core files changed
 
-- `manifest.json`: loads the semantic matcher before the content script and bumps the extension version to `0.4.0`.
-- `contentScript.js`: connects the Agent planning flow to semantic matching and semantic memory.
-- `README.md`: documents the Agent flow and AI-style matching behavior.
+- `manifest.json`: loads the local semantic matcher before the content script and bumps the extension version to `0.4.1`.
+- `contentScript.js`: adds confidence-gated autofill decisions, suggestions, debug output, sensitive-field protection, and confirmed memory saving.
+- `options.html` / `options.js` / `styles.css`: add memory review UI and the explicit sensitive-field autofill preference.
+- `README.md`: clarifies that the current implementation is local semantic matching, not OpenAI API integration.
+- `test-agent-application.html`: adds review-requested test fields, including sensitive EEO fields.
 
 ## 2. New modules
 
-- `aiSemanticMatcher.js`: local AI-style semantic matching module.
+- `aiSemanticMatcher.js`: local semantic matcher.
   - Defines bilingual profile and array-field concepts.
-  - Vectorizes field context into weighted tokens.
-  - Scores semantic similarity with cosine similarity.
-  - Stores and reuses learned memory vectors.
+  - Tokenizes English words/numbers with `/[a-z0-9]+/g`.
+  - Keeps CJK single-character tokens and CJK bigrams.
+  - Scores memory and concept matches with cosine similarity.
+  - Returns `score` and `confidence` for all semantic/memory candidates.
 
-## 3. How field recognition works
+## 3. Field recognition logic
 
-The content script first builds a page model instead of filling isolated inputs. It classifies the page into basic information, education arrays, internship/work arrays, and long-text fields. For repeated sections, it groups fields into rows and detects add-row buttons before planning any fill actions.
+The content script builds a page model before planning actions. It classifies fields into:
 
-## 4. How AI matching works
+- Basic profile fields.
+- Education array rows.
+- Internship/work array rows.
+- Long-text questions.
 
-The new semantic matcher compares each field's label, surrounding section text, and inferred section type against bilingual field concepts. It calculates vector similarity and returns the best profile path when confidence is high enough. Learned memory is checked first and can override generic concepts when the user has previously answered a similar field.
+The planner compares row counts against Profile data, adds missing rows first, waits for DOM rendering, then replans filling against the updated page.
 
-This is currently a local deterministic AI-style matcher. It does not call an external LLM yet, but the module boundary is ready for adding a remote LLM/OCR planner later.
+## 4. Matching logic
 
-## 5. How memory works
+Current state: this PR does **not** integrate the OpenAI API yet.
 
-When the user manually fills a field and clicks "记住当前填写内容", ApplyPilot stores:
+The matcher is a local deterministic semantic matcher. It vectorizes field labels, nearby text, and section context, then compares them against:
 
-- The field label and section context.
-- The literal answer or profile path when known.
-- A compact semantic vector.
-- The update timestamp.
+- Confirmed user memory.
+- Bilingual semantic concepts.
+- Rule fallback where needed.
 
-On future pages, the matcher compares new field vectors against learned memory. Similar fields can be filled even when the wording is not identical.
+Next stage: replace or augment the local matcher with OpenAI API semantic classification and optional OCR for scanned PDFs.
 
-## 6. How to test
+## 5. Memory behavior
 
-1. Reload the unpacked extension from `chrome://extensions` or `edge://extensions`.
-2. Open the Profile page and import a DOCX or text-based PDF resume.
-3. Open `test-agent-application.html`.
-4. Click the ApplyPilot popup.
-5. Confirm the popup reports detected sections and row counts.
-6. Run smart autofill.
-7. Verify that missing education/internship rows are added before filling and that dropdowns are selected through click actions.
-8. Manually fill an unmatched field, click "记住当前填写内容", refresh, and confirm a similar field is filled from memory.
+Memory is no longer saved silently.
+
+- After the user manually fills fields and clicks the learn action, ApplyPilot asks for confirmation before saving each question/answer.
+- Saved memory includes label/context, answer or profile path, section, semantic vector, timestamp, and disabled state.
+- The Profile settings page now includes memory review UI with list, edit, delete, and disable support.
+
+## 6. Autofill policy
+
+Automatically filled:
+
+- Candidates with `score >= 0.85`.
+- Normal profile fields such as name, email, phone, work authorization, visa sponsorship, education rows, and employer/company rows when confidence is high.
+
+Needs user confirmation:
+
+- Candidates with `0.55 <= score < 0.85`.
+- These are added to the suggestion UI and are not written until the user clicks Apply.
+
+Skipped by default:
+
+- Candidates with `score < 0.55`.
+- Sensitive fields unless explicitly enabled in Profile settings:
+  - gender
+  - race / ethnicity
+  - disability
+  - veteran status
+  - religion
+  - political affiliation
+  - equal opportunity / EEO questions
+  - health-related questions
+  - criminal history
+
+ApplyPilot never auto-submits forms.
+
+## 7. Debugging and testing
+
+Debug output:
+
+- `console.table` prints one row per planned field with selector, label, nearby text, matched path, value preview, score, source, action, and reason.
+- The popup reports filled, suggested, skipped, and debug row counts.
+
+Test page coverage:
+
+- First name / Given name
+- Surname / Last name
+- Email
+- Mobile phone
+- Legal work authorization
+- Visa sponsorship
+- Expected graduation date
+- University / Institution
+- Employer / Company
+- Gender / Race / Disability / Veteran status, which should not autofill by default
 
 Validation run:
 
 - `node --check aiSemanticMatcher.js`
 - `node --check contentScript.js`
-- `manifest.json` JSON parse check
+- `node --check options.js`
+- `node --check popup.js`
 
-## 7. Known unfinished issues
+## 8. Known unfinished issues
 
+- This is not OpenAI API integration yet.
 - Scanned image PDFs still need OCR.
-- The semantic matcher is local and deterministic; external LLM planning is not connected yet.
-- Complex custom date pickers may need site-specific adapters.
-- Some ATS platforms inside cross-origin iframes may require additional extension permissions or frame handling.
+- Some complex custom date pickers may need site-specific adapters.
+- Cross-origin ATS iframes may require extra extension frame handling.

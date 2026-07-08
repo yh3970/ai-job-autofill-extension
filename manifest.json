@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ApplyPilot",
-  "description": "Agentic job application autofill from a local resume profile with page understanding and action planning.",
-  "version": "0.4.0",
+  "description": "Job application autofill with local semantic matching, memory review, and action planning.",
+  "version": "0.4.1",
   "permissions": ["activeTab", "storage", "scripting"],
   "host_permissions": ["<all_urls>"],
   "action": {

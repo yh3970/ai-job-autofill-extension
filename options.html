@@ -53,6 +53,7 @@
           <label>工作许可/签证<input data-path="workAuthorization"></label>
           <label>是否需要签证担保<input data-path="visaSponsorship"></label>
           <label>是否接受搬迁<input data-path="relocation"></label>
+          <label class="wide checkbox-label"><input id="allowSensitiveAutofill" type="checkbox"> Allow automatic filling of sensitive EEO fields</label>
           <label>期望薪资<input data-path="desiredSalary"></label>
           <label>到岗时间<input data-path="noticePeriod"></label>
           <label>可入职日期<input data-path="availabilityDate"></label>
@@ -99,6 +100,7 @@
           <button id="clearMemory">清空记忆库</button>
           <span id="memoryCount"></span>
         </div>
+        <div id="memoryList" class="memory-list"></div>
       </section>
 
       <div id="toast" class="toast" hidden></div>

@@ -1,6 +1,6 @@
 (function () {
-  const MEMORY_THRESHOLD = 0.72;
-  const ONTOLOGY_THRESHOLD = 0.48;
+  const MEMORY_THRESHOLD = 0.55;
+  const ONTOLOGY_THRESHOLD = 0.55;
 
   const PROFILE_CONCEPTS = [
     concept("personal.email", ["email", "email address", "mail", "e-mail", "\u90ae\u7bb1", "\u7535\u5b50\u90ae\u4ef6"]),
@@ -82,7 +82,7 @@
     const query = vectorize(text);
     let best = null;
     for (const entry of Object.values(memory)) {
-      if (!entry || (!entry.profilePath && !entry.value)) continue;
+      if (!entry || entry.disabled || (!entry.profilePath && !entry.value)) continue;
       if (entry.section && section && entry.section !== section && entry.section !== "profile") continue;
       const entryVector = entry.vector ? pairsToVector(entry.vector) : vectorize(entry.label || "");
       const score = cosine(query, entryVector);
@@ -92,6 +92,7 @@
           value: entry.value || "",
           source: "memory",
           score,
+          confidence: score,
           memoryEntry: entry
         };
       }
@@ -105,7 +106,7 @@
     for (const item of concepts) {
       const score = cosine(query, item.vector);
       if (score >= threshold && (!best || score > best.score)) {
-        best = { key: item.key, source: "semantic", score };
+        best = { key: item.key, source: "semantic", score, confidence: score };
       }
     }
     return best;
@@ -175,6 +176,10 @@
     matchArrayField,
     createMemoryEntry,
     vectorize,
-    cosine
+    cosine,
+    thresholds: {
+      autoFill: 0.85,
+      suggest: 0.55
+    }
   };
 })();

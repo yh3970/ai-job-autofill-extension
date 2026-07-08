@@ -39,6 +39,7 @@ async function init() {
   profile = withProfileDefaults(stored.profile || {});
   renderProfile(profile);
   renderMemoryCount(stored.fieldMemory || {});
+  renderMemoryList(stored.fieldMemory || {});
 
   document.querySelector("#saveProfile").addEventListener("click", saveProfile);
   document.querySelector("#importResume").addEventListener("click", importResume);
@@ -56,6 +57,7 @@ function renderProfile(data) {
   document.querySelectorAll("[data-path]").forEach((input) => {
     input.value = getPath(data, input.dataset.path) || "";
   });
+  document.querySelector("#allowSensitiveAutofill").checked = Boolean(data.preferences?.allowSensitiveAutofill);
   document.querySelector("#skills").value = Array.isArray(data.skills) ? data.skills.join(", ") : "";
   document.querySelector("#languages").value = Array.isArray(data.languages) ? data.languages.join(", ") : "";
   document.querySelector("#certifications").value = Array.isArray(data.certifications) ? data.certifications.join(", ") : "";
@@ -99,6 +101,8 @@ async function saveProfile() {
   document.querySelectorAll("[data-path]").forEach((input) => {
     setPath(nextProfile, input.dataset.path, input.value.trim());
   });
+  nextProfile.preferences ||= {};
+  nextProfile.preferences.allowSensitiveAutofill = document.querySelector("#allowSensitiveAutofill").checked;
   nextProfile.skills = document.querySelector("#skills").value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean);
   nextProfile.languages = document.querySelector("#languages").value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean);
   nextProfile.certifications = document.querySelector("#certifications").value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean);
@@ -148,6 +152,7 @@ async function importResume() {
 async function clearMemory() {
   await chrome.storage.local.set({ fieldMemory: {} });
   renderMemoryCount({});
+  renderMemoryList({});
   showToast("记忆库已清空");
 }
 
@@ -155,11 +160,72 @@ function renderMemoryCount(memory) {
   document.querySelector("#memoryCount").textContent = `当前已记住 ${Object.keys(memory).length} 个字段`;
 }
 
+function renderMemoryList(memory) {
+  const container = document.querySelector("#memoryList");
+  if (!container) return;
+  const entries = Object.entries(memory || {});
+  if (!entries.length) {
+    container.innerHTML = '<p class="hint">No saved memory yet.</p>';
+    return;
+  }
+
+  container.innerHTML = entries.map(([key, entry]) => `
+    <article class="memory-item" data-memory-key="${escapeHtml(key)}">
+      <label><input type="checkbox" data-memory-toggle ${entry.disabled ? "" : "checked"}> Enabled</label>
+      <div><strong>${escapeHtml(entry.label || key)}</strong></div>
+      <div class="hint">Section: ${escapeHtml(entry.section || "profile")} | Source: ${escapeHtml(entry.profilePath || "literal")}</div>
+      <textarea data-memory-value rows="2">${escapeHtml(entry.value || "")}</textarea>
+      <div class="actions-row">
+        <button data-memory-save>Edit</button>
+        <button data-memory-delete>Delete</button>
+      </div>
+    </article>
+  `).join("");
+
+  container.querySelectorAll("[data-memory-save]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const item = button.closest("[data-memory-key]");
+      const key = item.dataset.memoryKey;
+      const next = { ...(await getMemory()) };
+      next[key] = {
+        ...(next[key] || {}),
+        value: item.querySelector("[data-memory-value]").value.trim(),
+        disabled: !item.querySelector("[data-memory-toggle]").checked,
+        updatedAt: Date.now()
+      };
+      await chrome.storage.local.set({ fieldMemory: next });
+      renderMemoryCount(next);
+      renderMemoryList(next);
+      showToast("Memory updated");
+    });
+  });
+
+  container.querySelectorAll("[data-memory-delete]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const item = button.closest("[data-memory-key]");
+      const key = item.dataset.memoryKey;
+      const next = { ...(await getMemory()) };
+      delete next[key];
+      await chrome.storage.local.set({ fieldMemory: next });
+      renderMemoryCount(next);
+      renderMemoryList(next);
+      showToast("Memory deleted");
+    });
+  });
+}
+
+async function getMemory() {
+  const { fieldMemory } = await chrome.storage.local.get(["fieldMemory"]);
+  return fieldMemory || {};
+}
+
 function collectProfileFromForm() {
   const current = structuredClone(profile);
   document.querySelectorAll("[data-path]").forEach((input) => {
     setPath(current, input.dataset.path, input.value.trim());
   });
+  current.preferences ||= {};
+  current.preferences.allowSensitiveAutofill = document.querySelector("#allowSensitiveAutofill").checked;
   current.skills = document.querySelector("#skills").value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean);
   current.languages = document.querySelector("#languages").value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean);
   current.certifications = document.querySelector("#certifications").value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean);
@@ -229,7 +295,10 @@ function withProfileDefaults(data) {
     languages: [],
     skills: [],
     resumeText: "",
-    resumeFiles: []
+    resumeFiles: [],
+    preferences: {
+      allowSensitiveAutofill: false
+    }
   }, data);
 }
 

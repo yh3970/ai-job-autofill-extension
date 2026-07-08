@@ -31,7 +31,10 @@ chrome.runtime.onInstalled.addListener(async () => {
     languages: [],
     skills: [],
     resumeText: "",
-    resumeFiles: []
+    resumeFiles: [],
+    preferences: {
+      allowSensitiveAutofill: false
+    }
   };
   if (!current.profile) {
     await chrome.storage.local.set({ profile: defaultProfile });
