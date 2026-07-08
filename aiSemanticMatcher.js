@@ -2,6 +2,11 @@
   const MEMORY_THRESHOLD = 0.55;
   const ONTOLOGY_THRESHOLD = 0.55;
 
+  const STOP_WORDS = new Set([
+    "the", "a", "an", "of", "to", "for", "in", "on", "and", "or", "your", "you", "please", "enter",
+    "select", "choose", "input", "field", "form", "信息", "请输入", "选择", "填写"
+  ]);
+
   const PROFILE_CONCEPTS = [
     concept("personal.email", ["email", "email address", "mail", "e-mail", "\u90ae\u7bb1", "\u7535\u5b50\u90ae\u4ef6"]),
     concept("personal.phone", ["phone", "mobile", "telephone", "cell", "contact number", "\u7535\u8bdd", "\u624b\u673a", "\u8054\u7cfb\u65b9\u5f0f"]),
@@ -166,10 +171,6 @@
     return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
   }
 
-  const STOP_WORDS = new Set([
-    "the", "a", "an", "of", "to", "for", "in", "on", "and", "or", "your", "you", "please", "enter",
-    "select", "choose", "input", "field", "form", "信息", "请输入", "选择", "填写"
-  ]);
 
   window.ApplyPilotSemanticMatcher = {
     matchProfileField,
