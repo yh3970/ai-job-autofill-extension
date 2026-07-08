@@ -57,6 +57,9 @@
     ["description", /description|detail|\u63cf\u8ff0|\u8be6\u60c5/i]
   ];
 
+
+  const SENSITIVE_FIELD_PATTERN = /religion|religious|faith|political|party affiliation|political affiliation|health|medical|medical history|disability|criminal|conviction|felony|misdemeanor|arrest|offen[cs]e|犯罪|刑事|宗教|政治|政党|健康|医疗|病史/i;
+
   const EXPERIENCE_PATTERNS = [
     ["company", /company|employer|organization|\u516c\u53f8|\u5355\u4f4d|\u673a\u6784/i],
     ["title", /title|position|role|job|\u804c\u4f4d|\u5c97\u4f4d|\u89d2\u8272/i],
@@ -139,6 +142,7 @@
     const experienceItems = Array.isArray(profile?.experience) ? profile.experience.filter(hasAnyValue) : [];
 
     for (const field of model.sections.basic) {
+      if (isSensitiveField(field)) continue;
       const path = matchProfilePath(field, memory);
       const value = path ? getProfileValue(profile, path) : "";
       if (value) actions.push(fillAction(field, value, path));
@@ -148,6 +152,7 @@
     appendArrayFillActions(actions, model.sections.internship.rows, experienceItems, EXPERIENCE_PATTERNS, "experience");
 
     for (const field of model.sections.longText) {
+      if (isSensitiveField(field)) continue;
       const path = matchProfilePath(field, memory) || "summary";
       const value = getProfileValue(profile, path);
       if (value) actions.push(fillAction(field, value, path));
@@ -155,6 +160,7 @@
 
     for (const field of model.fields) {
       if (actions.some((action) => action.fieldId === field.id)) continue;
+      if (isSensitiveField(field)) continue;
       const path = matchProfilePath(field, memory);
       const value = path ? getProfileValue(profile, path) : "";
       if (value) actions.push(fillAction(field, value, path));
@@ -330,6 +336,19 @@
     if (SECTION_PATTERNS.internship.some((pattern) => pattern.test(normalized))) return "internship";
     if (SECTION_PATTERNS.longText.some((pattern) => pattern.test(normalized))) return "longText";
     return "basic";
+  }
+
+  function isSensitiveField(field) {
+    const element = field.element;
+    const ownText = [
+      getLabelText(element),
+      element.getAttribute("aria-label"),
+      element.getAttribute("placeholder"),
+      element.name,
+      element.id,
+      element.getAttribute("autocomplete")
+    ].filter(Boolean).join(" ");
+    return SENSITIVE_FIELD_PATTERN.test(ownText);
   }
 
   function matchProfilePath(field, memory) {
