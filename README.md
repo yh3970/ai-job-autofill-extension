@@ -9,6 +9,7 @@ ApplyPilot is a Chrome/Edge browser extension prototype for autofilling job appl
 - Uses PDF.js for text-based PDF extraction, with a lightweight fallback extractor.
 - Supports domestic and overseas job-application fields such as Chinese name, preferred name, nationality, work authorization, visa sponsorship, relocation, availability, languages, and certifications.
 - Runs an agent-style autofill loop: page understanding, action planning, queued execution, and learning.
+- Uses AI-style semantic matching instead of direct keyword-only matching. The local matcher builds bilingual field concepts, vectorizes field context, scores semantic similarity, and lets learned memory override generic concepts.
 - Understands basic information, education arrays, internship/work arrays, and long-text question areas.
 - Adds missing education or internship rows before filling when the resume has more items than the page initially shows.
 - Handles dropdowns as actions: click, wait, find option, select.
@@ -29,8 +30,9 @@ ApplyPilot now avoids those patterns by building a page model first, planning ac
 
 1. Page understanding: scan the whole page and classify basic info, education rows, internship/work rows, and long-text fields.
 2. Planning: compare resume data with current row counts. If rows are missing, plan add-row actions first.
-3. Action execution: click, wait for render, fill fields, open dropdowns, select options, and dispatch native events.
-4. Learning: remember one-off fields after you manually fill them once.
+3. AI matching: compare each field context with learned memory and bilingual semantic concepts, then choose the best profile source.
+4. Action execution: click, wait for render, fill fields, open dropdowns, select options, and dispatch native events.
+5. Learning: remember one-off fields after you manually fill them once, including a semantic vector for future similar fields.
 
 ## How to try it
 

@@ -139,25 +139,22 @@
     const experienceItems = Array.isArray(profile?.experience) ? profile.experience.filter(hasAnyValue) : [];
 
     for (const field of model.sections.basic) {
-      const path = matchProfilePath(field, memory);
-      const value = path ? getProfileValue(profile, path) : "";
-      if (value) actions.push(fillAction(field, value, path));
+      const candidate = getProfileCandidate(field, profile, memory);
+      if (candidate.value) actions.push(fillAction(field, candidate.value, candidate.source));
     }
 
     appendArrayFillActions(actions, model.sections.education.rows, educationItems, EDUCATION_PATTERNS, "education");
     appendArrayFillActions(actions, model.sections.internship.rows, experienceItems, EXPERIENCE_PATTERNS, "experience");
 
     for (const field of model.sections.longText) {
-      const path = matchProfilePath(field, memory) || "summary";
-      const value = getProfileValue(profile, path);
-      if (value) actions.push(fillAction(field, value, path));
+      const candidate = getProfileCandidate(field, profile, memory, "summary");
+      if (candidate.value) actions.push(fillAction(field, candidate.value, candidate.source));
     }
 
     for (const field of model.fields) {
       if (actions.some((action) => action.fieldId === field.id)) continue;
-      const path = matchProfilePath(field, memory);
-      const value = path ? getProfileValue(profile, path) : "";
-      if (value) actions.push(fillAction(field, value, path));
+      const candidate = getProfileCandidate(field, profile, memory);
+      if (candidate.value) actions.push(fillAction(field, candidate.value, candidate.source));
     }
 
     return actions;
@@ -253,8 +250,10 @@
     for (const field of fields) {
       const value = getCurrentFieldValue(field);
       if (!value) continue;
+      const described = describeField(field, learned);
       const label = normalizeText(getElementText(field));
-      const entry = { type: "literal", value, label, updatedAt: Date.now() };
+      const entry = window.ApplyPilotSemanticMatcher?.createMemoryEntry(described, value, "", described.section) ||
+        { type: "literal", value, label, section: described.section, updatedAt: Date.now() };
       updated[getFieldSignature(field)] = entry;
       updated[getLabelMemoryKey(field)] = entry;
       learned += 1;
@@ -333,6 +332,8 @@
   }
 
   function matchProfilePath(field, memory) {
+    const semanticMatch = window.ApplyPilotSemanticMatcher?.matchProfileField(field, memory);
+    if (semanticMatch?.key) return semanticMatch.key;
     const memoryEntry = memory[getFieldSignature(field.element)] || memory[getLabelMemoryKey(field.element)];
     if (memoryEntry?.profilePath) return memoryEntry.profilePath;
     for (const [path, pattern] of FIELD_PATTERNS) {
@@ -341,7 +342,18 @@
     return "";
   }
 
+  function getProfileCandidate(field, profile, memory, fallbackPath = "") {
+    const semanticMatch = window.ApplyPilotSemanticMatcher?.matchProfileField(field, memory);
+    if (semanticMatch?.value) return { value: semanticMatch.value, source: "memory" };
+    if (semanticMatch?.key) return { value: getProfileValue(profile, semanticMatch.key), source: semanticMatch.key };
+    const path = matchProfilePath(field, memory) || fallbackPath;
+    return path ? { value: getProfileValue(profile, path), source: path } : { value: "", source: "" };
+  }
+
   function matchItemKey(field, patterns) {
+    const section = field.section === "education" ? "education" : "experience";
+    const semanticMatch = window.ApplyPilotSemanticMatcher?.matchArrayField(field, section);
+    if (semanticMatch?.key) return semanticMatch.key;
     for (const [key, pattern] of patterns) {
       if (pattern.test(field.fieldTextNormalized)) return key;
     }
