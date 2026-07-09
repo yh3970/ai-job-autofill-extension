@@ -42,6 +42,18 @@ Autofill confidence policy:
 - Sensitive EEO, health, criminal history, political, religion, veteran, disability, race, and gender fields are skipped by default unless explicitly enabled in Profile settings.
 - ApplyPilot never auto-submits forms.
 
+### AI Autofill Architecture
+
+The AI development workflow for building ApplyPilot uses `/aidev` comments on GitHub issues and pull requests as the entrypoint for new feature and fix requests.
+
+The high-level AI dev loop flow follows four steps:
+1.  Ingest full issue context and repository state to understand requested changes
+2.  Generate a structured, scoped implementation plan defining exact file targets and minimal changes
+3.  Produce focused file changes aligned strictly to the approved plan
+4.  Run pre-PR validation to confirm changes work as intended and do not break existing functionality
+
+Clear, explicit boundaries separate user approval checkpoints, AI planning logic, and direct repository modification actions to ensure all changes remain intentional, reviewable, and aligned with project goals.
+
 ## How to try it
 
 1. Open Chrome or Edge.
