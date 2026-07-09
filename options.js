@@ -33,6 +33,7 @@ const LIST_CONFIG = {
 };
 
 const AI_RESUME_SETTINGS_KEY = "aiResumeSettings";
+const MIN_USEFUL_RESUME_TEXT = 80;
 
 let profile = null;
 let aiResumeSettings = null;
@@ -176,28 +177,45 @@ async function importResume() {
   try {
     const parser = window.ResumeParser || ResumeParser;
     const parsed = await parser.parseFile(file);
-    let importedProfile = parsed.profile;
-    let source = "本地规则解析";
     const warnings = Array.isArray(parsed.warnings) ? parsed.warnings.filter(Boolean) : [];
+    const usefulTextLength = String(parsed.text || "").replace(/\s/g, "").length;
     aiResumeSettings = collectAiResumeSettings();
     await chrome.storage.local.set({ [AI_RESUME_SETTINGS_KEY]: aiResumeSettings });
 
+    let importedProfile = parsed.profile;
+    let source = "本地规则解析";
+
     if (aiResumeSettings.enabled) {
       if (!aiResumeSettings.apiKey) {
-        warnings.push("已启用 AI 解析，但 API Key 为空，本次使用本地规则解析兜底。");
-      } else if (!parsed.text || parsed.text.replace(/\s/g, "").length < 80) {
-        warnings.push("简历可用文本过少，AI 无法可靠解析；如果是扫描件/图片型 PDF，需要先做 OCR 或改用 DOCX/TXT。");
-      } else {
-        status.textContent = "正在调用 AI 解析简历...";
-        try {
-          const aiParser = window.AiResumeParser || AiResumeParser;
-          importedProfile = await aiParser.parseResumeText(parsed.text, aiResumeSettings);
-          source = "AI 解析";
-        } catch (error) {
-          console.error("ApplyPilot AI resume parsing failed", error);
-          warnings.push(`AI 解析失败，已使用本地规则解析兜底：${error.message || error}`);
-        }
+        status.textContent = "已启用 AI 解析，但 API Key 为空；为避免错误覆盖 Profile，本次没有导入。";
+        showToast("请先填写并保存 AI API Key");
+        return;
       }
+      if (aiResumeSettings.apiStyle === "chat" && usefulTextLength < MIN_USEFUL_RESUME_TEXT && isPdfFile(file)) {
+        status.textContent = "PDF 文本提取过少。Chat Completions 模式不能直接读取 PDF 文件，请切换到 Responses API 或上传 DOCX/TXT。";
+        showToast("请切换到 Responses API");
+        return;
+      }
+
+      status.textContent = isPdfFile(file)
+        ? "正在调用 AI 解析 PDF 简历..."
+        : "正在调用 AI 解析简历文本...";
+      try {
+        const aiParser = window.AiResumeParser || AiResumeParser;
+        importedProfile = await aiParser.parseResume({
+          file,
+          text: parsed.text,
+          settings: aiResumeSettings
+        });
+        source = "AI 解析";
+      } catch (error) {
+        console.error("ApplyPilot AI resume parsing failed", error);
+        status.textContent = `AI 解析失败；为避免错误覆盖 Profile，本次没有导入。错误：${error.message || error}`;
+        showToast("AI 解析失败，未覆盖 Profile");
+        return;
+      }
+    } else if (usefulTextLength < MIN_USEFUL_RESUME_TEXT && isPdfFile(file)) {
+      warnings.push("PDF 文本提取过少。未启用 AI 时，扫描件/复杂编码 PDF 无法可靠识别。建议开启 AI Responses API 或上传 DOCX/TXT。");
     }
 
     const current = collectProfileFromForm();
@@ -394,6 +412,10 @@ function setPath(target, path, value) {
     return node[key];
   }, target);
   parent[last] = value;
+}
+
+function isPdfFile(file) {
+  return /\.pdf$/i.test(file?.name || "") || file?.type === "application/pdf";
 }
 
 function showToast(text) {
