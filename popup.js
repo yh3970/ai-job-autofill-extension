@@ -35,11 +35,11 @@ async function fillCurrentPage() {
     setStatus("填充失败。请确认页面已经加载完成。");
     return;
   }
-  setStatus(`Agent 已执行 ${response.actions || 0} 个动作，填充 ${response.filled} 个字段。`);
+  setStatus(`Agent 已执行 ${response.actions || 0} 个动作，填充 ${response.filled} 个字段，建议确认 ${response.suggestions || 0} 个。`);
   if (response.sections || response.planSummary) {
     const sections = response.sections || {};
     const plan = response.planSummary || {};
-    setResult(`页面结构：教育 ${sections.educationRows || 0} 行，经历 ${sections.internshipRows || 0} 行。动作计划：新增/点击 ${plan.click || 0} 次，输入 ${plan.inputText || 0} 次，下拉/日期 ${Number(plan.selectOption || 0) + Number(plan.selectDate || 0)} 次。`);
+    setResult(`页面结构：教育 ${sections.educationRows || 0} 行，经历 ${sections.internshipRows || 0} 行。动作计划：新增/点击 ${plan.click || 0} 次，输入 ${plan.inputText || 0} 次，建议 ${plan.suggest || 0} 次，跳过 ${plan.debugOnly || 0} 次。Debug rows: ${response.debugRows?.length || 0}。`);
   }
   if (response.uncertain?.length) {
     setResult(`${resultEl.textContent} 还有 ${response.uncertain.length} 个动作不确定，可手动补充后点“记住当前填写内容”。`);

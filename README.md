@@ -9,6 +9,7 @@ ApplyPilot is a Chrome/Edge browser extension prototype for autofilling job appl
 - Uses PDF.js for text-based PDF extraction, with a lightweight fallback extractor.
 - Supports domestic and overseas job-application fields such as Chinese name, preferred name, nationality, work authorization, visa sponsorship, relocation, availability, languages, and certifications.
 - Runs an agent-style autofill loop: page understanding, action planning, queued execution, and learning.
+- Uses local semantic matching instead of direct keyword-only matching. The matcher builds bilingual field concepts, vectorizes field context, scores semantic similarity, and lets confirmed memory override generic concepts. It is not connected to the OpenAI API yet.
 - Understands basic information, education arrays, internship/work arrays, and long-text question areas.
 - Adds missing education or internship rows before filling when the resume has more items than the page initially shows.
 - Handles dropdowns as actions: click, wait, find option, select.
@@ -29,8 +30,17 @@ ApplyPilot now avoids those patterns by building a page model first, planning ac
 
 1. Page understanding: scan the whole page and classify basic info, education rows, internship/work rows, and long-text fields.
 2. Planning: compare resume data with current row counts. If rows are missing, plan add-row actions first.
-3. Action execution: click, wait for render, fill fields, open dropdowns, select options, and dispatch native events.
-4. Learning: remember one-off fields after you manually fill them once.
+3. Local semantic matching: compare each field context with confirmed memory and bilingual semantic concepts, then choose the best profile source.
+4. Action execution: click, wait for render, fill fields, open dropdowns, select options, and dispatch native events.
+5. Learning: remember one-off fields after you manually fill them once, including a semantic vector for future similar fields.
+
+Autofill confidence policy:
+
+- `score >= 0.85`: fill automatically.
+- `0.55 <= score < 0.85`: show a confirmation suggestion UI.
+- `score < 0.55`: skip.
+- Sensitive EEO, health, criminal history, political, religion, veteran, disability, race, and gender fields are skipped by default unless explicitly enabled in Profile settings.
+- ApplyPilot never auto-submits forms.
 
 ## How to try it
 
@@ -52,4 +62,4 @@ After importing a resume, the Profile page now reports how many characters were 
 
 - File upload fields on job sites are not auto-filled because browsers intentionally restrict silent file upload.
 - DOCX parsing reads normal text-based Word files. PDF parsing is best effort and works best for text PDFs, not scanned image PDFs.
-- Scanned image PDFs still need OCR. The current agent is local and deterministic; a later version can connect an optional LLM/OCR service for deeper semantic matching.
+- Scanned image PDFs still need OCR. The current matcher is local and deterministic; a later version can connect OpenAI API and OCR services for deeper semantic matching.

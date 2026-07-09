@@ -78,9 +78,25 @@
         <h2>基础信息 / Personal Information</h2>
         <div class="grid">
           <label>Full Name<input name="full_name"></label>
+          <label>First name / Given name<input name="given_name"></label>
+          <label>Surname / Last name<input name="surname"></label>
           <label>Email Address<input name="email"></label>
-          <label>Phone Number<input name="phone"></label>
+          <label>Mobile phone<input name="mobile_phone"></label>
           <label>Current Location<input name="location"></label>
+          <label>Are you legally authorized to work?
+            <select name="work_authorized">
+              <option></option>
+              <option>Yes</option>
+              <option>No</option>
+            </select>
+          </label>
+          <label>Will you now or in the future require visa sponsorship?
+            <select name="visa_sponsorship">
+              <option></option>
+              <option>Yes</option>
+              <option>No</option>
+            </select>
+          </label>
           <label>Nationality
             <select name="nationality">
               <option></option>
@@ -98,9 +114,10 @@
         <div id="education-rows">
           <div class="row education-item">
             <label>School<input name="school"></label>
+            <label>University / Institution<input name="institution"></label>
             <label>Degree<input name="degree"></label>
             <label>Major<input name="major"></label>
-            <label>Graduation Date<input name="graduation"></label>
+            <label>Expected graduation date<input name="graduation"></label>
           </div>
         </div>
         <button type="button" id="add-education">添加教育经历</button>
@@ -111,6 +128,7 @@
         <div id="experience-rows">
           <div class="row experience-item">
             <label>Company<input name="company"></label>
+            <label>Employer / Company<input name="employer"></label>
             <label>Position Title<input name="title"></label>
             <label>Start Date<input name="start"></label>
             <label>End Date<input name="end"></label>
@@ -123,6 +141,43 @@
       <section>
         <h2>开放式问题 / Open Questions</h2>
         <label>Why are you interested in this role?<textarea name="motivation" rows="5"></textarea></label>
+      </section>
+
+      <section>
+        <h2>EEO Sensitive Questions</h2>
+        <div class="grid">
+          <label>Gender
+            <select name="gender">
+              <option></option>
+              <option>Female</option>
+              <option>Male</option>
+              <option>Prefer not to say</option>
+            </select>
+          </label>
+          <label>Race / Ethnicity
+            <select name="race">
+              <option></option>
+              <option>Asian</option>
+              <option>Prefer not to say</option>
+            </select>
+          </label>
+          <label>Disability status
+            <select name="disability">
+              <option></option>
+              <option>Yes</option>
+              <option>No</option>
+              <option>Prefer not to say</option>
+            </select>
+          </label>
+          <label>Veteran status
+            <select name="veteran">
+              <option></option>
+              <option>Protected veteran</option>
+              <option>Not a veteran</option>
+              <option>Prefer not to say</option>
+            </select>
+          </label>
+        </div>
       </section>
     </main>
 

@@ -1,6 +1,20 @@
 (function () {
   const AP_ID = "data-applypilot-id";
   const WAIT_MS = 220;
+  const AUTO_FILL_THRESHOLD = 0.85;
+  const SUGGEST_THRESHOLD = 0.55;
+
+  const SENSITIVE_FIELD_PATTERNS = [
+    /gender|sex\b|\u6027\u522b/i,
+    /race|ethnicity|ethnic|\u79cd\u65cf|\u65cf\u88d4/i,
+    /disability|disabled|\u6b8b\u75be/i,
+    /veteran|\u9000\u4f0d\u519b\u4eba/i,
+    /religion|religious|\u5b97\u6559/i,
+    /political|party affiliation|\u653f\u6cbb/i,
+    /equal opportunity|eeo|diversity survey|\u5e73\u7b49\u5c31\u4e1a|\u5e73\u7b49\u673a\u4f1a/i,
+    /health|medical|illness|\u5065\u5eb7|\u75be\u75c5|\u75c5\u53f2/i,
+    /criminal|conviction|felony|background check|\u72af\u7f6a|\u5211\u4e8b/i
+  ];
 
   const SECTION_PATTERNS = {
     basic: [
@@ -98,6 +112,8 @@
     const fillPlan = planFillActions(readyModel, profile, memory);
     const fillResult = await executePlan(fillPlan, profile);
     const finalModel = understandPage();
+    const debugRows = fillPlan.filter((action) => action.debug).map((action) => action.debug);
+    if (debugRows.length) console.table(debugRows);
     return {
       ok: true,
       mode: "agent",
@@ -106,7 +122,9 @@
       actions: rowResult.actions + fillResult.actions,
       sections: summarizeSections(finalModel),
       uncertain: [...rowResult.uncertain, ...fillResult.uncertain].slice(0, 20),
-      planSummary: summarizePlan([...rowPlan, ...fillPlan])
+      suggestions: fillResult.suggestions || 0,
+      planSummary: summarizePlan([...rowPlan, ...fillPlan]),
+      debugRows
     };
   }
 
@@ -139,25 +157,25 @@
     const experienceItems = Array.isArray(profile?.experience) ? profile.experience.filter(hasAnyValue) : [];
 
     for (const field of model.sections.basic) {
-      const path = matchProfilePath(field, memory);
-      const value = path ? getProfileValue(profile, path) : "";
-      if (value) actions.push(fillAction(field, value, path));
+      const candidate = getProfileCandidate(field, profile, memory);
+      const action = buildCandidateAction(field, candidate, profile);
+      if (action) actions.push(action);
     }
 
-    appendArrayFillActions(actions, model.sections.education.rows, educationItems, EDUCATION_PATTERNS, "education");
-    appendArrayFillActions(actions, model.sections.internship.rows, experienceItems, EXPERIENCE_PATTERNS, "experience");
+    appendArrayFillActions(actions, model.sections.education.rows, educationItems, EDUCATION_PATTERNS, "education", memory, profile);
+    appendArrayFillActions(actions, model.sections.internship.rows, experienceItems, EXPERIENCE_PATTERNS, "experience", memory, profile);
 
     for (const field of model.sections.longText) {
-      const path = matchProfilePath(field, memory) || "summary";
-      const value = getProfileValue(profile, path);
-      if (value) actions.push(fillAction(field, value, path));
+      const candidate = getProfileCandidate(field, profile, memory, "summary");
+      const action = buildCandidateAction(field, candidate, profile);
+      if (action) actions.push(action);
     }
 
     for (const field of model.fields) {
       if (actions.some((action) => action.fieldId === field.id)) continue;
-      const path = matchProfilePath(field, memory);
-      const value = path ? getProfileValue(profile, path) : "";
-      if (value) actions.push(fillAction(field, value, path));
+      const candidate = getProfileCandidate(field, profile, memory);
+      const action = buildCandidateAction(field, candidate, profile);
+      if (action) actions.push(action);
     }
 
     return actions;
@@ -178,15 +196,52 @@
     }
   }
 
-  function appendArrayFillActions(actions, rows, items, patterns, sourceName) {
+  function appendArrayFillActions(actions, rows, items, patterns, sourceName, memory, profile) {
     rows.slice(0, items.length).forEach((row, index) => {
       const item = items[index];
       for (const field of row.fields) {
-        const key = matchItemKey(field, patterns);
-        if (!key || !item[key]) continue;
-        actions.push(fillAction(field, item[key], `${sourceName}.${index}.${key}`, row.id));
+        const match = matchItemKey(field, patterns, memory);
+        if (!match.key || !item[match.key]) continue;
+        const candidate = {
+          value: item[match.key],
+          source: `${sourceName}.${index}.${match.key}`,
+          matchedProfilePath: `${sourceName}.${index}.${match.key}`,
+          score: match.score,
+          confidence: match.score,
+          matchSource: match.source || "semantic",
+          reason: match.reason || "array-field-match"
+        };
+        const action = buildCandidateAction(field, candidate, profile, row.id);
+        if (action) actions.push(action);
       }
     });
+  }
+
+  function buildCandidateAction(field, candidate, profile, rowId) {
+    const debugBase = createDebugRow(field, candidate);
+    if (!candidate.value) {
+      return debugOnly(field, candidate, "skip", "no-value", debugBase);
+    }
+    if (isSensitiveField(field) && !profile?.preferences?.allowSensitiveAutofill) {
+      return debugOnly(field, candidate, "skip", "sensitive-field-requires-explicit-preference", debugBase);
+    }
+    if (candidate.score < SUGGEST_THRESHOLD) {
+      return debugOnly(field, candidate, "skip", "low-confidence", debugBase);
+    }
+    if (candidate.score < AUTO_FILL_THRESHOLD) {
+      return { ...fillAction(field, candidate.value, candidate.source, rowId), type: "suggest", debug: { ...debugBase, fillAction: "suggest", reason: "medium-confidence" } };
+    }
+    return { ...fillAction(field, candidate.value, candidate.source, rowId), debug: { ...debugBase, fillAction: "fill", reason: "high-confidence" } };
+  }
+
+  function debugOnly(field, candidate, fillActionName, reason, debugBase) {
+    return {
+      type: "debugOnly",
+      fieldId: field.id,
+      value: candidate.value || "",
+      source: candidate.source || "skipped",
+      debug: { ...debugBase, fillAction: fillActionName, reason }
+    };
   }
 
   function fillAction(field, value, source, rowId) {
@@ -203,6 +258,7 @@
     let model = understandPage();
     let filled = 0;
     let actions = 0;
+    let suggestions = 0;
     const uncertain = [];
 
     for (const action of plan) {
@@ -223,6 +279,9 @@
         uncertain.push(action);
         continue;
       }
+      if (action.type === "debugOnly") {
+        continue;
+      }
 
       const element = document.querySelector(`[${AP_ID}="${cssEscape(action.fieldId || action.targetId)}"]`);
       if (!element) {
@@ -232,17 +291,22 @@
 
       let ok = false;
       if (action.type === "click") ok = await clickElement(element);
+      if (action.type === "suggest") {
+        addSuggestion(element, action);
+        suggestions += 1;
+        ok = true;
+      }
       if (action.type === "inputText") ok = await inputText(element, action.value);
       if (action.type === "selectOption") ok = await selectOption(element, action.value);
       if (action.type === "selectDate") ok = await selectDate(element, action.value);
 
       actions += 1;
-      if (ok && action.type !== "click") filled += 1;
+      if (ok && !["click", "suggest"].includes(action.type)) filled += 1;
       if (!ok) uncertain.push({ ...action, label: getElementText(element), reason: "action-failed" });
       await sleep(60);
     }
 
-    return { filled, actions, uncertain };
+    return { filled, actions, suggestions, uncertain };
   }
 
   async function learnFromPage(profile, memory) {
@@ -253,8 +317,22 @@
     for (const field of fields) {
       const value = getCurrentFieldValue(field);
       if (!value) continue;
+      const described = describeField(field, learned);
       const label = normalizeText(getElementText(field));
-      const entry = { type: "literal", value, label, updatedAt: Date.now() };
+      const candidate = getProfileCandidate(described, profile, memory);
+      let profilePath = normalizeText(candidate.value) === normalizeText(value) ? candidate.matchedProfilePath : "";
+      let memorySection = described.section;
+      if (described.section === "education") {
+        profilePath = matchItemKey(described, EDUCATION_PATTERNS, memory).key || profilePath;
+      }
+      if (described.section === "internship") {
+        profilePath = matchItemKey(described, EXPERIENCE_PATTERNS, memory).key || profilePath;
+        memorySection = "experience";
+      }
+      const shouldSave = window.confirm(`ApplyPilot memory\n\nSave this answer for future similar questions?\n\nQuestion: ${getElementText(field)}\nAnswer: ${previewValue(value)}`);
+      if (!shouldSave) continue;
+      const entry = window.ApplyPilotSemanticMatcher?.createMemoryEntry(described, value, profilePath, memorySection) ||
+        { type: "literal", value, label, section: memorySection, updatedAt: Date.now() };
       updated[getFieldSignature(field)] = entry;
       updated[getLabelMemoryKey(field)] = entry;
       learned += 1;
@@ -333,6 +411,8 @@
   }
 
   function matchProfilePath(field, memory) {
+    const semanticMatch = window.ApplyPilotSemanticMatcher?.matchProfileField(field, memory);
+    if (semanticMatch?.key) return semanticMatch.key;
     const memoryEntry = memory[getFieldSignature(field.element)] || memory[getLabelMemoryKey(field.element)];
     if (memoryEntry?.profilePath) return memoryEntry.profilePath;
     for (const [path, pattern] of FIELD_PATTERNS) {
@@ -341,11 +421,136 @@
     return "";
   }
 
-  function matchItemKey(field, patterns) {
-    for (const [key, pattern] of patterns) {
-      if (pattern.test(field.fieldTextNormalized)) return key;
+  function getProfileCandidate(field, profile, memory, fallbackPath = "") {
+    const semanticMatch = window.ApplyPilotSemanticMatcher?.matchProfileField(field, memory);
+    if (semanticMatch?.value) {
+      return {
+        value: semanticMatch.value,
+        source: "memory",
+        matchSource: "memory",
+        matchedProfilePath: semanticMatch.key || "",
+        score: semanticMatch.score || 0,
+        confidence: semanticMatch.confidence || semanticMatch.score || 0,
+        reason: "semantic-memory-match"
+      };
     }
-    return "";
+    if (semanticMatch?.key) {
+      return {
+        value: getProfileValue(profile, semanticMatch.key),
+        source: semanticMatch.key,
+        matchSource: semanticMatch.source || "semantic",
+        matchedProfilePath: semanticMatch.key,
+        score: semanticMatch.score || 0,
+        confidence: semanticMatch.confidence || semanticMatch.score || 0,
+        reason: "local-semantic-concept-match"
+      };
+    }
+    const path = matchProfilePath(field, memory) || fallbackPath;
+    return path
+      ? {
+          value: getProfileValue(profile, path),
+          source: path,
+          matchSource: fallbackPath && path === fallbackPath ? "fallback" : "rule",
+          matchedProfilePath: path,
+          score: fallbackPath && path === fallbackPath ? 0.56 : 0.86,
+          confidence: fallbackPath && path === fallbackPath ? 0.56 : 0.86,
+          reason: fallbackPath && path === fallbackPath ? "fallback-profile-field" : "rule-match"
+        }
+      : { value: "", source: "skipped", matchSource: "skipped", matchedProfilePath: "", score: 0, confidence: 0, reason: "no-match" };
+  }
+
+  function matchItemKey(field, patterns, memory) {
+    const section = field.section === "education" ? "education" : "experience";
+    const semanticMatch = window.ApplyPilotSemanticMatcher?.matchArrayField(field, section, memory);
+    if (semanticMatch?.key) {
+      return {
+        key: semanticMatch.key,
+        score: semanticMatch.score || 0,
+        confidence: semanticMatch.confidence || semanticMatch.score || 0,
+        source: semanticMatch.source || "semantic",
+        reason: "array-semantic-match"
+      };
+    }
+    for (const [key, pattern] of patterns) {
+      if (pattern.test(field.fieldTextNormalized)) return { key, score: 0.86, confidence: 0.86, source: "rule", reason: "array-rule-match" };
+    }
+    return { key: "", score: 0, confidence: 0, source: "skipped", reason: "array-no-match" };
+  }
+
+  function createDebugRow(field, candidate) {
+    return {
+      selector: getElementSelector(field.element),
+      label: truncate(field.text, 120),
+      nearbyText: truncate(field.normalizedText, 160),
+      matchedProfilePath: candidate.matchedProfilePath || candidate.source || "",
+      valuePreview: previewValue(candidate.value),
+      score: Number(candidate.score || 0).toFixed(2),
+      confidence: Number(candidate.confidence || candidate.score || 0).toFixed(2),
+      source: candidate.matchSource || candidate.source || "skipped",
+      fillAction: "skip",
+      reason: candidate.reason || ""
+    };
+  }
+
+  function isSensitiveField(field) {
+    const text = `${field.text} ${field.normalizedText}`;
+    return SENSITIVE_FIELD_PATTERNS.some((pattern) => pattern.test(text));
+  }
+
+  function addSuggestion(element, action) {
+    const panel = getSuggestionPanel();
+    const item = document.createElement("div");
+    item.className = "applypilot-suggestion";
+    item.innerHTML = `
+      <div><strong>${escapeHtml(action.debug?.label || "Field")}</strong></div>
+      <div>Suggested: <code>${escapeHtml(previewValue(action.value))}</code></div>
+      <div>Score: ${escapeHtml(String(action.debug?.score || ""))} | Source: ${escapeHtml(action.debug?.source || "")}</div>
+      <button type="button">Apply</button>
+    `;
+    item.querySelector("button").addEventListener("click", async () => {
+      if (action.type === "suggest") {
+        if (element.tagName.toLowerCase() === "select") await selectOption(element, action.value);
+        else await inputText(element, action.value);
+      }
+      item.remove();
+    });
+    panel.appendChild(item);
+  }
+
+  function getSuggestionPanel() {
+    let panel = document.querySelector("#applypilot-suggestion-panel");
+    if (panel) return panel;
+    panel = document.createElement("aside");
+    panel.id = "applypilot-suggestion-panel";
+    panel.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:2147483647;width:320px;max-height:50vh;overflow:auto;background:#fff;border:1px solid #cfd6e4;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:12px;font:13px system-ui;color:#17202a;";
+    panel.innerHTML = "<strong>ApplyPilot suggestions</strong>";
+    document.documentElement.appendChild(panel);
+    return panel;
+  }
+
+  function getElementSelector(element) {
+    if (element.id) return `#${element.id}`;
+    if (element.name) return `${element.tagName.toLowerCase()}[name="${element.name}"]`;
+    return element.tagName.toLowerCase();
+  }
+
+  function previewValue(value) {
+    return truncate(String(value || "").replace(/\s+/g, " "), 80);
+  }
+
+  function truncate(value, max) {
+    const text = String(value || "");
+    return text.length > max ? `${text.slice(0, max - 1)}...` : text;
+  }
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, (char) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;"
+    })[char]);
   }
 
   async function inputText(element, value) {
