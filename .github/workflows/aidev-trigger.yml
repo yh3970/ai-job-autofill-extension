@@ -23,8 +23,8 @@ jobs:
       branch_prefix: ai/issue-
       engine_repository: yh3970/ai-dev-loop-engine
       engine_ref: main
-      provider: gemini
-      model: gemini-2.0-flash
+      provider: volcengine
+      model: doubao-seed-1-6-250615
       working_directory: .
       max_iterations: 3
       test_command: |
@@ -32,4 +32,4 @@ jobs:
           if [ -f "$f" ]; then node --check "$f"; fi
         done
     secrets:
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      ARK_API_KEY: ${{ secrets.ARK_API_KEY }}
