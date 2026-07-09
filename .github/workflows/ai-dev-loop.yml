@@ -1,0 +1,171 @@
+name: AI Dev Loop
+
+on:
+  workflow_call:
+    inputs:
+      issue_number:
+        description: Issue number to implement.
+        required: true
+        type: string
+      trigger_comment:
+        description: Comment text that triggered the loop.
+        required: false
+        type: string
+        default: ""
+      base_branch:
+        description: Branch to create the AI work branch from.
+        required: false
+        type: string
+        default: main
+      branch_prefix:
+        description: Prefix for the fixed issue branch.
+        required: false
+        type: string
+        default: ai/issue-
+      engine_repository:
+        description: Repository that contains reusable prompts and workflow assets.
+        required: false
+        type: string
+        default: yh3970/ai-dev-loop-engine
+      engine_ref:
+        description: Git ref to checkout from the engine repository.
+        required: false
+        type: string
+        default: main
+      model:
+        description: OpenAI model used for planning and review.
+        required: false
+        type: string
+        default: gpt-4.1
+      install_command:
+        description: Optional dependency installation command to run before implementation.
+        required: false
+        type: string
+        default: ""
+      test_command:
+        description: Optional test command to run after each Codex implementation attempt.
+        required: false
+        type: string
+        default: ""
+      working_directory:
+        description: Directory where install and test commands should run.
+        required: false
+        type: string
+        default: .
+      max_iterations:
+        description: Maximum review/fix iterations for a single workflow run.
+        required: false
+        type: number
+        default: 3
+    secrets:
+      OPENAI_API_KEY:
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  ai-dev-loop:
+    name: Plan, code, review, and update PR
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      MODEL: ${{ inputs.model }}
+    steps:
+      - name: Init runtime env
+        shell: bash
+        run: |
+          echo "RUNTIME_DIR=$RUNNER_TEMP/ai-dev-loop-runtime" >> "$GITHUB_ENV"
+
+      - name: Create helper scripts
+        shell: bash
+        run: |
+          mkdir -p "$RUNTIME_DIR"
+          cat > "$RUNTIME_DIR/openai_call.py" <<'PY'
+          import json
+          import os
+          import random
+          import sys
+          import time
+
+          import requests
+
+          api_key = os.environ["OPENAI_API_KEY"]
+          model = os.environ.get("MODEL", "gpt-4.1")
+          prompt_path, input_path, output_path = sys.argv[1:4]
+
+          with open(prompt_path, "r", encoding="utf-8") as f:
+              system_prompt = f.read()
+          with open(input_path, "r", encoding="utf-8") as f:
+              user_input = f.read()
+
+          payload = {
+              "model": model,
+              "input": [
+                  {"role": "system", "content": system_prompt},
+                  {"role": "user", "content": user_input},
+              ],
+          }
+          if output_path.endswith(".json"):
+              payload["text"] = {"format": {"type": "json_object"}}
+
+          retry_statuses = {429, 500, 502, 503, 504}
+          backoff_seconds = [10, 20, 40, 80, 120]
+          max_attempts = 5
+          response = None
+
+          for attempt in range(1, max_attempts + 1):
+              response = requests.post(
+                  "https://api.openai.com/v1/responses",
+                  headers={
+                      "Authorization": f"Bearer {api_key}",
+                      "Content-Type": "application/json",
+                  },
+                  json=payload,
+                  timeout=180,
+              )
+
+              if response.status_code not in retry_statuses:
+                  response.raise_for_status()
+                  break
+
+              if attempt >= max_attempts:
+                  print(
+                      f"OpenAI API failed after {max_attempts} attempts with "
+                      f"status {response.status_code}: {response.text[:500]}",
+                      file=sys.stderr,
+                  )
+                  response.raise_for_status()
+
+              retry_after = response.headers.get("Retry-After")
+              if retry_after:
+                  try:
+                      wait_seconds = float(retry_after)
+                  except ValueError:
+                      wait_seconds = backoff_seconds[attempt - 1]
+              else:
+                  wait_seconds = backoff_seconds[attempt - 1]
+              wait_seconds += random.uniform(0, 2)
+
+              print(
+                  f"OpenAI API returned {response.status_code}; retrying in "
+                  f"{wait_seconds:.1f}s, attempt {attempt + 1}/{max_attempts}",
+                  file=sys.stderr,
+              )
+              time.sleep(wait_seconds)
+
+          data = response.json()
+          text = data.get("output_text")
+          if text is None:
+              parts = []
+              for item in data.get("output", []):
+                  for content in item.get("content", []):
+                      if content.get("type") in ("output_text", "text"):
+                          parts.append(content.get("text", ""))
+              text = "\n".join(parts).strip()
+
+          with open(output_path, "w", encoding="utf-8") as f:
+              f.write(text or "")
+          PY
