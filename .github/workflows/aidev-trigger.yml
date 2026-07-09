@@ -15,7 +15,7 @@ jobs:
       github.event.issue.pull_request == null &&
       startsWith(github.event.comment.body, '/aidev') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
-    uses: yh3970/ai-dev-loop-engine/.github/workflows/ai-dev-loop.yml@main
+    uses: yh3970/ai-dev-loop-engine/.github/workflows/ai-dev-loop-volc.yml@main
     with:
       issue_number: ${{ github.event.issue.number }}
       trigger_comment: ${{ github.event.comment.body }}
@@ -26,7 +26,7 @@ jobs:
       provider: volcengine
       model: doubao-seed-evolving
       working_directory: .
-      max_iterations: 3
+      max_iterations: 1
       test_command: |
         for f in background.js contentScript.js options.js popup.js aiSemanticMatcher.js; do
           if [ -f "$f" ]; then node --check "$f"; fi
