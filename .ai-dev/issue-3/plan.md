@@ -1,59 +1,57 @@
 # summary
-This change makes a small, targeted improvement to the project's root README file to add a clear, concise explanation of the AI autofill architecture. The user-visible outcome is that readers of the README (including new users, contributors, and repository visitors) will have easy access to accurate, high-level documentation of how the AI autofill system works, what user-facing behaviors to expect, and how it fits into the project's core functionality, without adding unnecessary bulk to the document.
+This change adds a small, dedicated section to the repository's root README that clearly explains the AI autofill feature's high-level architecture. The user-visible outcome is that readers (including end users and new contributors) can quickly understand the core purpose, key components, and basic data flow of the AI autofill system directly from the project's main documentation, without needing to navigate source code to build a high-level mental model of the feature.
 
 # target_files
-- `./README.md`: Primary expected canonical root README file, the standard Markdown README used in most software repositories and the expected target for the documentation improvement.
-- Narrowly scoped discovery pattern: `./README*` (restricted exclusively to the repository root directory, no recursive subdirectory search). This pattern is only to be used if `./README.md` does not exist, to locate the canonical root README (which may use a standard alternate extension like .rst, .adoc, or .txt per common project conventions). Recursive search for README files in subdirectories is not permitted, as the issue refers to the top-level project README.
+- ./README.md: The only file permitted for modification, to be updated with the new concise AI autofill architecture section.
+- Note: Read-only review of all other repository files (source code, existing documentation, configuration) is allowed solely to gather accurate, verifiable facts about the existing AI autofill implementation to inform the README update; no edits to files outside ./README.md are permitted without explicit plan revision.
 
 # implementation_steps
-1. Inspect the repository root to identify the canonical top-level README file: first check for `./README.md`; if it does not exist, use the narrow root-only `./README*` pattern to find the correct top-level README, and do not edit README files in subdirectories.
-2. Read the full content of the identified README to:
-   a. Map the existing document structure to find the most thematically appropriate location for AI autofill architecture content (e.g., adjacent to existing sections on core features, system architecture, or AI-powered functionality, rather than appending uncontextualized content to the very end of the file if a better fit exists).
-   b. Identify any existing partial documentation of the AI autofill system to expand and improve, rather than adding redundant duplicate content.
-3. Add or update a concise section explaining the AI autofill architecture, keeping the total new/modified content to 200-300 words (consistent with the "small improvement" scope). The content should cover only user-relevant, observable high-level details:
-   - The core purpose of the AI autofill feature
-   - The high-level user flow for triggering and using AI autofill
-   - Key guardrails and behavior users can expect during autofill operation
-   Do not include non-public internal details, proprietary system prompts, or granular implementation specifics irrelevant to README readers.
-4. Format the new/updated content to perfectly match the existing README's conventions: match heading hierarchy, list styling, tone of voice, link format, and spacing to surrounding content to maintain visual and stylistic consistency. If the README uses a non-Markdown format, apply that format's native syntax instead of Markdown.
-5. Perform a line-by-line review of the edited README to confirm:
-   a. No existing content (installation steps, license text, contribution guidelines, project description, etc.) was accidentally deleted, altered, or moved incorrectly.
-   b. The AI autofill explanation is accurate to observable system behavior, and makes no unsubstantiated claims about non-existent functionality.
-   c. There are no typos, grammatical errors, or syntax errors that would break rendering of the document.
+1. Perform read-only exploration of the repository's codebase to collect accurate, verifiable details about the existing AI autofill implementation: identify core components, end-to-end data flow, user-facing guardrails, and integration points. Do not modify any files during this exploration.
+2. Review the full existing content of ./README.md to:
+   a. Identify a logical placement for the new architecture section (prioritize positioning after high-level feature overviews, before installation/quickstart content, consistent with the document's existing flow)
+   b. Note existing tone, formatting, and heading hierarchy conventions to match
+   c. Flag any existing content related to AI autofill to avoid unnecessary duplication
+3. Insert a new level-2 heading (matching the README's existing heading hierarchy) for the AI autofill architecture section at the identified location.
+4. Populate the section with concise, factual content (150-300 words total) that covers:
+   a. The core user value and purpose of the AI autofill feature
+   b. 2-4 key, verifiable components of the system
+   c. A simplified 3-4 step description of end-to-end data flow when autofill is active
+   d. Any verifiable user-facing privacy or safety guardrails implemented in the system
+5. Add lightweight, relevant cross-links from the new section to existing adjacent README sections (e.g., privacy notes, configuration guides) where such sections already exist, to avoid duplicating content.
+6. Proofread the modified README to:
+   a. Ensure Markdown syntax is valid (correct heading levels, no broken link syntax, proper line breaks)
+   b. Confirm no existing README content was removed or altered outside the immediate area of the new section and necessary cross-link adjustments
+   c. Verify no claims in the new section reference unimplemented, planned, or hypothetical functionality
 
 # acceptance_criteria
-1. The repository's top-level canonical README file contains a clearly labeled, easily located section explaining the AI autofill architecture.
-2. The total new/updated content for the architecture explanation is between 200-300 words, consistent with the "small improvement" scope, and does not add unnecessary bulk to the README.
-3. The AI autofill section is stylistically and thematically consistent with the rest of the README, matching existing formatting, tone, and document structure without introducing new, inconsistent styling patterns.
-4. All pre-existing, correct README content remains intact and unmodified except for the minimal changes required to integrate the new architecture section.
-5. The explanation of AI autofill is accurate to user-observable system behavior, free of claims about unimplemented features, and accessible to readers who are new to the project.
-6. The README renders correctly with no syntax errors, broken lists, malformed headings, or broken links introduced by the change.
-7. No non-public, proprietary, or sensitive internal implementation details are included in the added documentation.
+1. The root ./README.md includes a distinct, clearly labeled section explaining the AI autofill architecture, placed in a logical position consistent with the document's existing structure.
+2. All claims in the new section are verifiable against the current AI autofill implementation in the repository codebase, with no fabricated, outdated, or hypothetical functionality described.
+3. The total length of the new section is between 150 and 300 words, fulfilling the "small improvement" scope without bloating the README.
+4. The new section matches the existing README's tone, Markdown formatting, and heading hierarchy, with no syntax errors, broken link markup, or rendering issues.
+5. Existing README content is preserved in full, with only minimal, relevant cross-link adjustments made to integrate the new section; no full rewrites or restructuring of unrelated content occurs.
+6. Content in the new section does not duplicate information already documented elsewhere in the README, instead using cross-links to point readers to existing detailed content where appropriate.
 
 # forbidden_changes
 - Do not merge branches.
 - Do not modify the repository default branch directly.
 - Do not expose, print, commit, or transform secrets.
 - Do not change files outside `target_files` unless the plan is explicitly revised first.
-- Do not edit README files located in repository subdirectories; only the top-level root README is in scope for this change.
-- Do not add multi-page, overly verbose documentation dumps to the README; the change is explicitly a small, targeted improvement, not a full rewrite of project documentation.
-- Do not include sensitive internal details, non-public system prompts, proprietary internal logic, or secrets in the added documentation.
-- Do not alter existing critical README content (installation instructions, license notices, contribution guidelines, project metadata, support information) except as strictly necessary to insert the new architecture section.
-- Do not create new standalone documentation files for the AI autofill architecture explanation; all content for this change must live within the existing top-level README.
+- Do not add code, dependencies, configuration, or functional changes as part of this documentation-only update.
+- Do not add lengthy architecture content (e.g., multi-paragraph deep dives, full architecture decision records, embedded diagrams requiring new assets) that extends beyond the requested small README improvement.
+- Do not make unsubstantiated claims about AI autofill performance, privacy guarantees, or feature capabilities that cannot be verified in the existing repository code.
+- Do not delete, rewrite, or restructure large sections of existing README content unrelated to the new AI autofill architecture section.
+- Do not create new standalone documentation files (e.g., separate ARCHITECTURE.md, docs/ directory pages) for this content; all new documentation for this issue must live within the existing root README.md.
 
 # test_commands
-1. First, scan root project configuration files (Makefile, package.json, pyproject.toml, justfile, .markdownlint.json, etc.) for any existing Markdown/documentation lint, link check, or README validation scripts. If such scripts exist, run the project's standard documentation validation command to catch formatting errors, broken links, or style issues.
-2. Run a content presence check to confirm the AI autofill section is present: from the repository root, run `grep -i "ai autofill" ./README*` (targeting only the root README) and verify a match for the section heading/content exists.
-3. If no dedicated project documentation test scripts exist, perform a structured inspection of the edited README:
-   - Verify the document renders correctly as its native format (Markdown, RST, etc.) with no broken syntax, using a local Markdown/RST preview tool or CLI renderer (e.g. `mdcat`, `rst2html`) if available.
-   - Read the new AI autofill section to confirm it is clear, concise, and accurate.
-   Note: No project-specific test commands are provided in the issue context, so this structured inspection fills the validation gap for this documentation-only change, as code behavior is not modified.
+1. If the repository defines pre-existing documentation linting, link checking, or README validation scripts (e.g., `npm run lint:docs`, `make readme-check`, `markdownlint README.md`), run those scripts first to validate Markdown syntax and link integrity.
+2. If no dedicated documentation validation scripts are present in the project:
+   a. Use a local Markdown preview tool to render the modified README.md and inspect for formatting errors, incorrect heading levels, or unrendered Markdown syntax.
+   b. Perform a line-by-line accuracy check: cross-reference every factual claim in the new AI autofill section against the relevant source code to confirm descriptions match the actual implementation.
+   Gap explanation: This is a documentation-only change with no functional code modifications, so unit/integration tests for application behavior are not applicable. No project-specific test command is provided in the issue context, so manual rendering and accuracy inspection is the safe validation fallback.
 
 # risks
-1. The new AI autofill section may be placed in a thematically unrelated or low-visibility location in the README, reducing its discoverability and usefulness for readers; care must be taken to align placement with existing document structure.
-2. Formatting or syntax errors (e.g. mismatched Markdown headings, broken lists, invalid RST syntax) may be introduced, causing the README to render incorrectly on code hosting platforms like GitHub.
-3. The added content may grow beyond the "small improvement" scope, including overly granular internal details, proprietary information, or irrelevant context that bloats the README and creates maintenance burden.
-4. If partial AI autofill documentation already exists in the README, adding a separate new section will create duplicate, conflicting content that can drift out of sync over time; existing content must be updated rather than duplicated.
-5. Existing critical README content (installation steps, license, contribution guides) may be accidentally overwritten, deleted, or misaligned while inserting the new section, requiring careful line-by-line review after edits.
-6. The AI autofill explanation may describe aspirational or non-existent functionality instead of actual, observable behavior, leading to incorrect user expectations and confusion.
-7. If the root README uses a non-Markdown format, applying Markdown-specific syntax will break document rendering; all added content must match the native format of the existing README file.
+1. Inaccurate documentation: There is risk of misdescribing component boundaries, data flow, or guardrails if code exploration is incomplete, leading to user or contributor confusion. This requires careful cross-check of all section claims against the actual autofill implementation code before finalizing.
+2. Scope creep: Without strict guardrails, documentation could expand far beyond the "small improvement" request, cluttering the README with overly granular implementation details. This risk is mitigated by the 150-300 word limit for the new section.
+3. Style inconsistency: The new section may clash with existing README tone, formatting, or structure if the implementer does not match existing conventions, leading to a disjointed reading experience. This requires a full pre-edit read of the existing README to align with established style.
+4. Redundant content: There is risk of duplicating existing AI autofill content already present in the README, leading to conflicting information as content is updated over time. This requires a full review of existing README content before writing the new section, and use of cross-links instead of duplication where possible.
+5. Documenting unimplemented functionality: There is risk of describing planned but unbuilt autofill features as existing functionality, particularly if in-code TODO comments or roadmap references are encountered during code exploration. This requires limiting all documented claims to code paths that are active and present in the current shipped codebase.
