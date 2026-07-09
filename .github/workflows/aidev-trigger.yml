@@ -24,7 +24,7 @@ jobs:
       engine_repository: yh3970/ai-dev-loop-engine
       engine_ref: main
       provider: volcengine
-      model: doubao-seed-1-6-250615
+      model: doubao-seed-evolving
       working_directory: .
       max_iterations: 3
       test_command: |
