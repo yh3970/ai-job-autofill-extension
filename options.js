@@ -32,37 +32,25 @@ const LIST_CONFIG = {
   }
 };
 
-const PREVIEW_PERSONAL_FIELDS = [
-  ["personal.fullName", "姓名"],
-  ["personal.chineseName", "中文名"],
-  ["personal.firstName", "名"],
-  ["personal.lastName", "姓"],
-  ["personal.email", "邮箱"],
-  ["personal.phone", "电话"],
-  ["personal.location", "所在地"],
-  ["personal.linkedin", "LinkedIn"],
-  ["personal.github", "GitHub"],
-  ["personal.portfolio", "作品集/个人网站"]
-];
+const AI_RESUME_SETTINGS_KEY = "aiResumeSettings";
 
 let profile = null;
-let pendingImport = null;
+let aiResumeSettings = null;
 
 init();
 
 async function init() {
-  const stored = await chrome.storage.local.get(["profile", "fieldMemory"]);
+  const stored = await chrome.storage.local.get(["profile", "fieldMemory", AI_RESUME_SETTINGS_KEY]);
   profile = withProfileDefaults(stored.profile || {});
+  aiResumeSettings = normalizeAiSettings(stored[AI_RESUME_SETTINGS_KEY] || {});
   renderProfile(profile);
+  renderAiResumeSettings(aiResumeSettings);
   renderMemoryCount(stored.fieldMemory || {});
   renderMemoryList(stored.fieldMemory || {});
 
   document.querySelector("#saveProfile").addEventListener("click", saveProfile);
   document.querySelector("#importResume").addEventListener("click", importResume);
-  document.querySelector("#confirmImport").addEventListener("click", confirmImportPreview);
-  document.querySelector("#cancelImport").addEventListener("click", cancelImportPreview);
-  document.querySelector("#confirmImportBottom").addEventListener("click", confirmImportPreview);
-  document.querySelector("#cancelImportBottom").addEventListener("click", cancelImportPreview);
+  document.querySelector("#saveAiResumeSettings").addEventListener("click", saveAiResumeSettings);
   document.querySelector("#clearMemory").addEventListener("click", clearMemory);
   document.querySelectorAll("[data-add]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -116,6 +104,58 @@ function renderList(key, items) {
   });
 }
 
+function renderAiResumeSettings(settings) {
+  document.querySelector("#aiResumeEnabled").checked = Boolean(settings.enabled);
+  document.querySelector("#aiResumeApiStyle").value = settings.apiStyle || "responses";
+  document.querySelector("#aiResumeBaseUrl").value = settings.baseUrl || "";
+  document.querySelector("#aiResumeModel").value = settings.model || "";
+  document.querySelector("#aiResumeApiKey").value = settings.apiKey || "";
+  document.querySelector("#aiResumePrompt").value = settings.prompt || "";
+}
+
+async function saveAiResumeSettings() {
+  aiResumeSettings = collectAiResumeSettings();
+  await chrome.storage.local.set({ [AI_RESUME_SETTINGS_KEY]: aiResumeSettings });
+  const status = document.querySelector("#aiResumeSettingsStatus");
+  status.textContent = "AI 设置已保存";
+  setTimeout(() => {
+    status.textContent = "";
+  }, 1800);
+  showToast("AI 设置已保存");
+}
+
+function collectAiResumeSettings() {
+  return normalizeAiSettings({
+    enabled: document.querySelector("#aiResumeEnabled").checked,
+    apiStyle: document.querySelector("#aiResumeApiStyle").value,
+    baseUrl: document.querySelector("#aiResumeBaseUrl").value,
+    model: document.querySelector("#aiResumeModel").value,
+    apiKey: document.querySelector("#aiResumeApiKey").value,
+    prompt: document.querySelector("#aiResumePrompt").value
+  });
+}
+
+function normalizeAiSettings(value) {
+  const defaults = window.AiResumeParser?.DEFAULT_SETTINGS || {
+    enabled: false,
+    apiStyle: "responses",
+    baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+    model: "doubao-seed-evolving",
+    apiKey: "",
+    prompt: ""
+  };
+  return {
+    ...defaults,
+    ...(value || {}),
+    enabled: Boolean(value?.enabled),
+    apiStyle: value?.apiStyle === "chat" ? "chat" : "responses",
+    baseUrl: String(value?.baseUrl || defaults.baseUrl).trim().replace(/\/+$/, ""),
+    model: String(value?.model || defaults.model).trim(),
+    apiKey: String(value?.apiKey || "").trim(),
+    prompt: String(value?.prompt || "")
+  };
+}
+
 async function saveProfile() {
   const nextProfile = collectProfileFromForm();
   profile = nextProfile;
@@ -132,144 +172,46 @@ async function importResume() {
     return;
   }
 
-  status.textContent = "正在本地解析...";
-  hideImportPreview();
+  status.textContent = "正在本地提取简历文本...";
   try {
     const parser = window.ResumeParser || ResumeParser;
     const parsed = await parser.parseFile(file);
+    let importedProfile = parsed.profile;
+    let source = "本地规则解析";
+    const warnings = Array.isArray(parsed.warnings) ? parsed.warnings.filter(Boolean) : [];
+    aiResumeSettings = collectAiResumeSettings();
+    await chrome.storage.local.set({ [AI_RESUME_SETTINGS_KEY]: aiResumeSettings });
+
+    if (aiResumeSettings.enabled) {
+      if (!aiResumeSettings.apiKey) {
+        warnings.push("已启用 AI 解析，但 API Key 为空，本次使用本地规则解析兜底。");
+      } else if (!parsed.text || parsed.text.replace(/\s/g, "").length < 80) {
+        warnings.push("简历可用文本过少，AI 无法可靠解析；如果是扫描件/图片型 PDF，需要先做 OCR 或改用 DOCX/TXT。");
+      } else {
+        status.textContent = "正在调用 AI 解析简历...";
+        try {
+          const aiParser = window.AiResumeParser || AiResumeParser;
+          importedProfile = await aiParser.parseResumeText(parsed.text, aiResumeSettings);
+          source = "AI 解析";
+        } catch (error) {
+          console.error("ApplyPilot AI resume parsing failed", error);
+          warnings.push(`AI 解析失败，已使用本地规则解析兜底：${error.message || error}`);
+        }
+      }
+    }
+
     const current = collectProfileFromForm();
-    const previewProfile = mergeImportedProfile(current, parsed.profile, parsed.fileName);
-    pendingImport = {
-      parsed,
-      profile: previewProfile
-    };
-    renderImportPreview(previewProfile, parsed);
-    status.textContent = `已解析 ${parsed.fileName}，提取 ${parsed.stats.textLength} 字，识别 ${parsed.stats.recognized} 项；请先预览确认，确认前不会保存。`;
-    showToast("请检查导入预览");
+    profile = mergeImportedProfile(current, importedProfile, parsed.fileName);
+    renderProfile(profile);
+    await chrome.storage.local.set({ profile });
+    const warningText = warnings.length ? `｜提示：${warnings.join("；")}` : "";
+    status.textContent = `已通过${source}导入 ${parsed.fileName}，提取 ${parsed.stats.textLength} 字，已写入 Profile${warningText}`;
+    showToast(`已通过${source}填充 Profile`);
   } catch (error) {
     console.error(error);
     status.textContent = "解析失败，可尝试复制简历文字到简历文本区";
     showToast("简历解析失败");
   }
-}
-
-function renderImportPreview(data, parsed) {
-  const preview = document.querySelector("#importPreview");
-  const warning = document.querySelector("#importWarning");
-  const summary = document.querySelector("#importPreviewSummary");
-  const fields = document.querySelector("#importPreviewFields");
-  const warnings = Array.isArray(parsed.warnings) ? parsed.warnings.filter(Boolean) : [];
-
-  warning.hidden = warnings.length === 0;
-  warning.innerHTML = warnings.map((item) => `<div>${escapeHtml(item)}</div>`).join("");
-  summary.textContent = `文件：${parsed.fileName}｜提取 ${parsed.stats.textLength} 字｜识别 ${parsed.stats.recognized} 项`;
-  fields.innerHTML = buildImportPreviewFields(data);
-  preview.hidden = false;
-  preview.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-function buildImportPreviewFields(data) {
-  const personalFields = PREVIEW_PERSONAL_FIELDS.map(([path, label]) => {
-    return `<label>${label}<input data-preview-path="${path}" value="${escapeHtml(getPath(data, path) || "")}"></label>`;
-  }).join("");
-
-  return `
-    <section class="preview-section">
-      <h3>基础信息</h3>
-      <div class="grid">${personalFields}</div>
-    </section>
-    <section class="preview-section">
-      <h3>个人简介</h3>
-      <label class="wide">Summary<textarea data-preview-path="summary" rows="4">${escapeHtml(data.summary || "")}</textarea></label>
-    </section>
-    ${buildPreviewList("education", data.education || [])}
-    ${buildPreviewList("experience", data.experience || [])}
-    ${buildPreviewList("projects", data.projects || [])}
-    <section class="preview-section">
-      <h3>技能/语言/证书</h3>
-      <div class="grid">
-        <label class="wide">技能<textarea data-preview-array="skills" rows="3">${escapeHtml((data.skills || []).join(", "))}</textarea></label>
-        <label class="wide">语言<textarea data-preview-array="languages" rows="2">${escapeHtml((data.languages || []).join(", "))}</textarea></label>
-        <label class="wide">证书<textarea data-preview-array="certifications" rows="2">${escapeHtml((data.certifications || []).join(", "))}</textarea></label>
-      </div>
-    </section>
-  `;
-}
-
-function buildPreviewList(key, items) {
-  const config = LIST_CONFIG[key];
-  const titleMap = {
-    education: "教育经历",
-    experience: "工作/实习经历",
-    projects: "项目经历"
-  };
-  const cards = items.length ? items.map((item, index) => {
-    const controls = config.fields.map(([field, label]) => {
-      const value = item[field] || "";
-      if (field === "description") {
-        return `<label class="wide">${label}<textarea data-preview-list="${key}" data-index="${index}" data-field="${field}" rows="3">${escapeHtml(value)}</textarea></label>`;
-      }
-      return `<label>${label}<input data-preview-list="${key}" data-index="${index}" data-field="${field}" value="${escapeHtml(value)}"></label>`;
-    }).join("");
-    return `<article class="item-card"><div class="item-header"><strong>${index + 1}</strong></div><div class="grid">${controls}</div></article>`;
-  }).join("") : `<p class="hint">未识别到${titleMap[key]}，你可以确认后在下方 Profile 里手动添加。</p>`;
-
-  return `
-    <section class="preview-section">
-      <h3>${titleMap[key]}</h3>
-      <div class="list">${cards}</div>
-    </section>
-  `;
-}
-
-async function confirmImportPreview() {
-  if (!pendingImport) {
-    showToast("没有待确认的导入内容");
-    return;
-  }
-  const nextProfile = collectProfileFromPreview(pendingImport.profile);
-  profile = withProfileDefaults(nextProfile);
-  renderProfile(profile);
-  await chrome.storage.local.set({ profile });
-  hideImportPreview();
-  document.querySelector("#importStatus").textContent = `已确认并保存 ${pendingImport.parsed.fileName}`;
-  pendingImport = null;
-  showToast("导入内容已确认并保存");
-}
-
-function cancelImportPreview() {
-  pendingImport = null;
-  hideImportPreview();
-  document.querySelector("#importStatus").textContent = "已取消导入，Profile 未保存任何变更";
-  showToast("已取消导入");
-}
-
-function hideImportPreview() {
-  const preview = document.querySelector("#importPreview");
-  if (preview) preview.hidden = true;
-}
-
-function collectProfileFromPreview(baseProfile) {
-  const next = structuredClone(baseProfile);
-  document.querySelectorAll("[data-preview-path]").forEach((input) => {
-    setPath(next, input.dataset.previewPath, input.value.trim());
-  });
-  document.querySelectorAll("[data-preview-array]").forEach((input) => {
-    next[input.dataset.previewArray] = splitCsvTextarea(input.value);
-  });
-
-  Object.keys(LIST_CONFIG).forEach((key) => {
-    next[key] = [];
-  });
-  document.querySelectorAll("[data-preview-list]").forEach((input) => {
-    const listName = input.dataset.previewList;
-    const index = Number(input.dataset.index);
-    const field = input.dataset.field;
-    next[listName] ||= [];
-    next[listName][index] ||= {};
-    next[listName][index][field] = input.value.trim();
-  });
-  return next;
 }
 
 async function clearMemory() {
@@ -367,21 +309,22 @@ function collectProfileFromForm() {
 }
 
 function mergeImportedProfile(current, imported, fileName) {
-  const merged = mergePreferCurrent(withProfileDefaults(imported), withProfileDefaults(current));
+  const merged = mergePreferImported(withProfileDefaults(imported), withProfileDefaults(current));
+  merged.preferences = current.preferences || merged.preferences || {};
   if (imported.resumeText) merged.resumeText = imported.resumeText;
   merged.resumeFiles = [
     ...(Array.isArray(current.resumeFiles) ? current.resumeFiles : []),
     { name: fileName, importedAt: new Date().toISOString() }
   ].slice(-10);
-  return merged;
+  return withProfileDefaults(merged);
 }
 
-function mergePreferCurrent(imported, current) {
-  if (Array.isArray(imported)) return current?.length ? current : imported;
-  if (!imported || typeof imported !== "object") return current || imported || "";
-  const merged = { ...imported, ...(current || {}) };
-  Object.keys(imported).forEach((key) => {
-    merged[key] = mergePreferCurrent(imported[key], current?.[key]);
+function mergePreferImported(imported, current) {
+  if (Array.isArray(imported)) return imported.length ? imported : (Array.isArray(current) ? current : []);
+  if (!imported || typeof imported !== "object") return imported || current || "";
+  const merged = { ...(current || {}), ...imported };
+  Object.keys({ ...(current || {}), ...imported }).forEach((key) => {
+    merged[key] = mergePreferImported(imported[key], current?.[key]);
   });
   return merged;
 }
