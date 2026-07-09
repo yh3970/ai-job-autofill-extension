@@ -23,7 +23,8 @@ jobs:
       branch_prefix: ai/issue-
       engine_repository: yh3970/ai-dev-loop-engine
       engine_ref: main
-      model: gpt-4.1-mini
+      provider: gemini
+      model: gemini-2.0-flash
       working_directory: .
       max_iterations: 3
       test_command: |
@@ -31,4 +32,4 @@ jobs:
           if [ -f "$f" ]; then node --check "$f"; fi
         done
     secrets:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
