@@ -1,27 +1,32 @@
-# Concise Implementation Plan: Issue #7 (Resume Parsing Accuracy + Import Preview)
-## Target Files (modify/add)
-### Backend
-1.  New: `app/services/resume_parser/constants.py` (Chinese section mappings, validation rules)
-2.  Modify: `app/services/resume_parser/{section_detector.py, pdf_parser.py, docx_parser.py, field_extractors.py}` (core parsing logic)
-3.  Modify: `app/models/profile.py`, `app/schemas/resume.py` (project date fields, preview response schema)
-4.  Modify: `app/api/routes/resume_import.py` (split parse/save endpoints)
-### Frontend
-1.  New: `web/src/components/resume/ImportPreviewPanel.vue` (editable preview UI)
-2.  Modify: `web/src/views/candidate/ResumeImport.vue` (multi-step import flow)
+### Concise Implementation Plan (Chrome/Edge Extension Only, 100% Local Parsing)
+**Guardrails**: No changes to forbidden non-extension files; run `node --check` on all modified JS files; zero external data uploads at any point in the parsing/import flow.
+---
+#### File-Specific Changes
+1.  **resumeParser.js (core parsing fixes)**
+    - Add post-PDF-extraction text length check, return a dedicated "scanned/image PDF unsupported" warning flag if usable extracted text falls below a minimum threshold.
+    - Implement priority-ordered Chinese section detection for 教育背景/实习经历/工作经历/项目经历/技能/证书 (with common variant matching); run section detection *before* name parsing to block section headings from being misidentified as candidate names.
+    - Tighten Chinese mobile number matching rules with context checks to eliminate false positives from ID numbers, list numbering, and postal codes.
+    - Add hard section boundary logic to reliably separate work experience and project experience entries.
+    - Extend project entry parsing to extract start/end date values, reusing existing work experience date parsing logic.
+    - Confirm no network/fetch calls are added to parsing workflows.
 
+2.  **options.html (preview UI)**
+    - Add a hidden, dismissible import preview container that displays all parsed profile fields, includes dedicated start/end inputs for project entries, and has explicit Confirm/Cancel action buttons.
+    - Add an inline alert element for the scanned PDF unsupported warning.
+    - Update import helper text to clearly note parsing runs fully locally and requires user confirmation before data is saved to the profile.
+
+3.  **options.js (flow logic updates)**
+    - Remove existing logic that writes parsed resume data directly to Profile storage immediately after parsing.
+    - After receiving parser results: surface the scanned PDF warning if flagged, otherwise populate the preview UI with all parsed data (including project start/end values) for user review and inline editing.
+    - Add preview event handlers: save reviewed/edited data to Profile storage only when the user clicks Confirm; discard parsed data and close the preview with no saves when the user clicks Cancel.
+    - Update existing project form and storage logic to support persisting start/end date fields for both imported and manually created projects.
+
+4.  **styles.css (minimal changes only if required)**
+    - Add lightweight, UI-consistent styles for the preview container, warning alert, and project date input layout to match existing extension design, with no unnecessary style overhauls.
 ---
-## Implementation Steps (all parsing runs locally, no external data uploads per requirement)
-1.  **Parsing accuracy upgrades**
-    - Build a Chinese section synonym map for the required sections (教育背景/实习经历/工作经历/项目经历/技能/证书); add all section headings to a name-detection blocklist, and only scan pre-section resume preamble content for candidate names to eliminate section-heading-as-name errors.
-    - Implement hard section boundaries to reliably separate work, internship, and project experience blocks.
-    - Tighten Chinese phone validation to only match valid 11-digit mobile numbers, filtering out random embedded short number sequences.
-    - Add date range extraction logic for project entries to populate start/end values, with support for "至今" (present) end dates.
-    - Add an extracted text length threshold check for PDFs: return a clear "scanned/image PDFs are not supported yet" warning if extracted text is too sparse.
-2.  **Data model update**: Add nullable `start_date`/`end_date` date fields to ProjectExperience storage and corresponding API schemas.
-3.  **Preview flow buildout**
-    - Split the existing one-step import API into two parts: a stateless parse endpoint that returns structured parsed data + warnings with no database writes, and a save endpoint that accepts user-reviewed/corrected data to write to Profile records.
-    - Update frontend to a 3-step import flow: file upload → local parsing → editable preview (displaying PDF warnings, allowing field edits) → confirmed save.
----
-## Validation Check
-- Confirm no outbound third-party calls are made during parsing
-- Test against sample Chinese DOCX/text-PDF/scanned-PDF files to verify section detection accuracy, name/phone extraction correctness, work/project separation, PDF warning behavior, and end-to-end preview/save functionality.
+#### Post-Implementation Validation
+- Confirm no external network requests trigger during import/parsing
+- Verify section headings are never detected as names, phone false positives are reduced, and work/project entries are correctly separated
+- Confirm project start/end dates parse and save properly
+- Verify scanned/image PDFs show the clear unsupported warning
+- Confirm the preview loads before any save, and data only persists after explicit user confirmation
