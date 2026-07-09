@@ -2,14 +2,20 @@
 
 ## 1. Core files changed
 
-- `manifest.json`: loads the local semantic matcher before the content script and bumps the extension version to `0.4.1`.
+- `manifest.json`: loads the local semantic matcher before the content script and bumps the extension version to `0.5.0`.
+- `aiResumeParser.js`: adds optional user-configured AI resume parsing for Profile generation.
 - `contentScript.js`: adds confidence-gated autofill decisions, suggestions, debug output, sensitive-field protection, and confirmed memory saving.
-- `options.html` / `options.js` / `styles.css`: add memory review UI and the explicit sensitive-field autofill preference.
+- `options.html` / `options.js` / `styles.css`: add AI resume settings, memory review UI, and the explicit sensitive-field autofill preference.
 - `README.md`: clarifies that the current implementation is local semantic matching, not OpenAI API integration.
 - `test-agent-application.html`: adds review-requested test fields, including sensitive EEO fields.
 
 ## 2. New modules
 
+- `aiResumeParser.js`: optional AI resume parser.
+  - Reads API settings from local browser storage.
+  - Supports Responses API and Chat Completions API.
+  - Sends extracted resume text to the user-configured API only after confirmation.
+  - Normalizes returned JSON into the Profile schema.
 - `aiSemanticMatcher.js`: local semantic matcher.
   - Defines bilingual profile and array-field concepts.
   - Tokenizes English words/numbers with `/[a-z0-9]+/g`.
@@ -30,7 +36,10 @@ The planner compares row counts against Profile data, adds missing rows first, w
 
 ## 4. Matching logic
 
-Current state: this PR does **not** integrate the OpenAI API yet.
+Current state:
+
+- Resume-to-Profile parsing can optionally call a user-configured AI API.
+- Page autofill field matching is still local semantic matching and does not call OpenAI API yet.
 
 The matcher is a local deterministic semantic matcher. It vectorizes field labels, nearby text, and section context, then compares them against:
 
@@ -38,7 +47,7 @@ The matcher is a local deterministic semantic matcher. It vectorizes field label
 - Bilingual semantic concepts.
 - Rule fallback where needed.
 
-Next stage: replace or augment the local matcher with OpenAI API semantic classification and optional OCR for scanned PDFs.
+Next stage: replace or augment the local page-field matcher with OpenAI API semantic classification and add OCR for scanned PDFs.
 
 ## 5. Memory behavior
 
@@ -105,7 +114,7 @@ Validation run:
 
 ## 8. Known unfinished issues
 
-- This is not OpenAI API integration yet.
-- Scanned image PDFs still need OCR.
+- Page-field semantic matching is not OpenAI API integration yet.
+- Scanned image PDFs still need OCR before AI resume parsing can work reliably.
 - Some complex custom date pickers may need site-specific adapters.
 - Cross-origin ATS iframes may require extra extension frame handling.

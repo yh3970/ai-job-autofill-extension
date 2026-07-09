@@ -6,6 +6,9 @@ ApplyPilot is a Chrome/Edge browser extension prototype for autofilling job appl
 
 - Stores a structured profile locally in the browser.
 - Imports Chinese or English resumes from DOCX, PDF, or TXT and fills the Profile automatically.
+- Optional AI resume parsing can call the user's configured API and write the returned JSON directly into Profile.
+- API Key is never hardcoded and is stored only in local browser storage.
+- When AI parsing is enabled, extracted resume text is sent to the configured AI API after user confirmation.
 - Uses PDF.js for text-based PDF extraction, with a lightweight fallback extractor.
 - Supports domestic and overseas job-application fields such as Chinese name, preferred name, nationality, work authorization, visa sponsorship, relocation, availability, languages, and certifications.
 - Runs an agent-style autofill loop: page understanding, action planning, queued execution, and learning.
@@ -42,6 +45,27 @@ Autofill confidence policy:
 - Sensitive EEO, health, criminal history, political, religion, veteran, disability, race, and gender fields are skipped by default unless explicitly enabled in Profile settings.
 - ApplyPilot never auto-submits forms.
 
+## AI Resume Parsing
+
+ApplyPilot can parse resumes in two modes:
+
+- Local fallback parsing: runs entirely in the browser and is best effort.
+- AI parsing: sends extracted resume text to the API configured in Options, then expects strict JSON matching the Profile schema.
+
+The Options page supports:
+
+- API Key
+- Base URL
+- Model
+- API type: Responses API or Chat Completions API
+
+Privacy boundary:
+
+- The API Key is stored only in `chrome.storage.local`.
+- The API Key is not committed to the codebase.
+- If AI parsing is enabled, ApplyPilot shows a confirmation before sending extracted resume text to the configured API.
+- Scanned/image PDFs still need OCR. If the extension cannot extract text from the PDF, AI parsing cannot reliably parse it yet.
+
 ### AI Autofill Architecture
 
 The AI development workflow for building ApplyPilot uses `/aidev` comments on GitHub issues and pull requests as the entrypoint for new feature and fix requests.
@@ -74,4 +98,4 @@ After importing a resume, the Profile page now reports how many characters were 
 
 - File upload fields on job sites are not auto-filled because browsers intentionally restrict silent file upload.
 - DOCX parsing reads normal text-based Word files. PDF parsing is best effort and works best for text PDFs, not scanned image PDFs.
-- Scanned image PDFs still need OCR. The current matcher is local and deterministic; a later version can connect OpenAI API and OCR services for deeper semantic matching.
+- Scanned image PDFs still need OCR. AI resume parsing currently operates on extracted text, not raw scanned images.

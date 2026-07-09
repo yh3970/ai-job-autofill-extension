@@ -30,19 +30,25 @@ const LIST_CONFIG = {
   }
 };
 
+const AI_RESUME_SETTINGS_KEY = "aiResumeSettings";
+
 let profile = null;
+let aiResumeSettings = null;
 
 init();
 
 async function init() {
-  const stored = await chrome.storage.local.get(["profile", "fieldMemory"]);
+  const stored = await chrome.storage.local.get(["profile", "fieldMemory", AI_RESUME_SETTINGS_KEY]);
   profile = withProfileDefaults(stored.profile || {});
+  aiResumeSettings = normalizeAiSettings(stored[AI_RESUME_SETTINGS_KEY] || {});
   renderProfile(profile);
+  renderAiResumeSettings(aiResumeSettings);
   renderMemoryCount(stored.fieldMemory || {});
   renderMemoryList(stored.fieldMemory || {});
 
   document.querySelector("#saveProfile").addEventListener("click", saveProfile);
   document.querySelector("#importResume").addEventListener("click", importResume);
+  document.querySelector("#saveAiResumeSettings").addEventListener("click", saveAiResumeSettings);
   document.querySelector("#clearMemory").addEventListener("click", clearMemory);
   document.querySelectorAll("[data-add]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -51,6 +57,57 @@ async function init() {
       renderList(key, profile[key]);
     });
   });
+}
+
+function renderAiResumeSettings(settings) {
+  document.querySelector("#aiResumeEnabled").checked = Boolean(settings.enabled);
+  document.querySelector("#aiResumeApiStyle").value = settings.apiStyle || "responses";
+  document.querySelector("#aiResumeBaseUrl").value = settings.baseUrl || "";
+  document.querySelector("#aiResumeModel").value = settings.model || "";
+  document.querySelector("#aiResumeApiKey").value = settings.apiKey || "";
+  document.querySelector("#aiResumePrompt").value = settings.prompt || "";
+}
+
+async function saveAiResumeSettings() {
+  aiResumeSettings = collectAiResumeSettings();
+  await chrome.storage.local.set({ [AI_RESUME_SETTINGS_KEY]: aiResumeSettings });
+  document.querySelector("#aiResumeSettingsStatus").textContent = "AI 设置已保存";
+  setTimeout(() => {
+    document.querySelector("#aiResumeSettingsStatus").textContent = "";
+  }, 1800);
+  showToast("AI 设置已保存");
+}
+
+function collectAiResumeSettings() {
+  return normalizeAiSettings({
+    enabled: document.querySelector("#aiResumeEnabled").checked,
+    apiStyle: document.querySelector("#aiResumeApiStyle").value,
+    baseUrl: document.querySelector("#aiResumeBaseUrl").value,
+    model: document.querySelector("#aiResumeModel").value,
+    apiKey: document.querySelector("#aiResumeApiKey").value,
+    prompt: document.querySelector("#aiResumePrompt").value
+  });
+}
+
+function normalizeAiSettings(value) {
+  const defaults = window.AiResumeParser?.DEFAULT_SETTINGS || {
+    enabled: false,
+    apiStyle: "responses",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-4.1-mini",
+    apiKey: "",
+    prompt: ""
+  };
+  return {
+    ...defaults,
+    ...(value || {}),
+    enabled: Boolean(value?.enabled),
+    apiStyle: value?.apiStyle === "chat" ? "chat" : "responses",
+    baseUrl: String(value?.baseUrl || defaults.baseUrl).trim().replace(/\/+$/, ""),
+    model: String(value?.model || defaults.model).trim(),
+    apiKey: String(value?.apiKey || "").trim(),
+    prompt: String(value?.prompt || "")
+  };
 }
 
 function renderProfile(data) {
@@ -133,15 +190,45 @@ async function importResume() {
     return;
   }
 
-  status.textContent = "正在本地解析...";
+  status.textContent = "正在本地提取简历文本...";
   try {
     const parser = window.ResumeParser || ResumeParser;
     const parsed = await parser.parseFile(file);
-    profile = mergeImportedProfile(collectProfileFromForm(), parsed.profile, parsed.fileName);
+    let importedProfile = parsed.profile;
+    let source = "本地解析";
+    const warnings = Array.isArray(parsed.warnings) ? parsed.warnings.filter(Boolean) : [];
+    aiResumeSettings = collectAiResumeSettings();
+    await chrome.storage.local.set({ [AI_RESUME_SETTINGS_KEY]: aiResumeSettings });
+
+    if (aiResumeSettings.enabled) {
+      if (!aiResumeSettings.apiKey) {
+        warnings.push("已启用 AI 解析，但 API Key 为空，本次使用本地解析。");
+      } else if (!parsed.text || parsed.text.replace(/\s/g, "").length < 80) {
+        warnings.push("简历可用文本过少。若这是扫描版/图片 PDF，需要 OCR；本次使用本地解析。");
+      } else {
+        const confirmed = window.confirm("ApplyPilot will send the extracted resume text to your configured AI API for parsing. API Key is stored only in local browser storage. Continue?");
+        if (confirmed) {
+          status.textContent = "正在调用 AI 解析简历...";
+          try {
+            const aiParser = window.AiResumeParser || AiResumeParser;
+            importedProfile = await aiParser.parseResumeText(parsed.text, aiResumeSettings);
+            source = "AI 解析";
+          } catch (error) {
+            console.error("ApplyPilot AI resume parsing failed", error);
+            warnings.push(`AI 解析失败，已回退本地解析：${error.message || error}`);
+          }
+        } else {
+          warnings.push("用户取消发送简历文本到 AI API，本次使用本地解析。");
+        }
+      }
+    }
+
+    profile = mergeImportedProfile(collectProfileFromForm(), importedProfile, parsed.fileName);
     renderProfile(profile);
     await chrome.storage.local.set({ profile });
-    status.textContent = `已导入 ${parsed.fileName}，提取 ${parsed.stats.textLength} 字，识别 ${parsed.stats.recognized} 项`;
-    showToast("已从简历自动填写并保存 Profile");
+    const warningText = warnings.length ? ` 提示：${warnings.join("；")}` : "";
+    status.textContent = `已通过${source}导入 ${parsed.fileName}，提取 ${parsed.stats.textLength} 字，已写入 Profile。${warningText}`;
+    showToast(`已通过${source}填写 Profile`);
   } catch (error) {
     console.error(error);
     status.textContent = "解析失败，可尝试复制简历文字到简历文本区";
@@ -244,12 +331,23 @@ function collectProfileFromForm() {
 }
 
 function mergeImportedProfile(current, imported, fileName) {
-  const merged = mergePreferCurrent(withProfileDefaults(imported), withProfileDefaults(current));
+  const merged = mergePreferImported(withProfileDefaults(imported), withProfileDefaults(current));
+  merged.preferences = current.preferences || merged.preferences || {};
   if (imported.resumeText) merged.resumeText = imported.resumeText;
   merged.resumeFiles = [
     ...(Array.isArray(current.resumeFiles) ? current.resumeFiles : []),
     { name: fileName, importedAt: new Date().toISOString() }
   ].slice(-10);
+  return merged;
+}
+
+function mergePreferImported(imported, current) {
+  if (Array.isArray(imported)) return imported.length ? imported : (Array.isArray(current) ? current : []);
+  if (!imported || typeof imported !== "object") return imported || current || "";
+  const merged = { ...(current || {}), ...imported };
+  Object.keys({ ...(current || {}), ...imported }).forEach((key) => {
+    merged[key] = mergePreferImported(imported[key], current?.[key]);
+  });
   return merged;
 }
 

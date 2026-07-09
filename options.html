@@ -18,11 +18,33 @@
 
       <section class="panel">
         <h2>智能导入简历</h2>
-        <p class="hint">支持 DOCX、PDF、TXT。解析在本地完成，导入结果会先填入下方 Profile，保存后生效。</p>
+        <p class="hint">支持 DOCX、文字型 PDF、TXT。开启 AI 后，会把本地提取出的简历文本发送到你配置的 AI API；API Key 只保存在本地浏览器 storage。</p>
         <div class="upload-box">
           <input id="resumeFile" type="file" accept=".docx,.pdf,.txt,.text,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain">
-          <button id="importResume">从简历自动填写 Profile</button>
+          <button id="importResume">解析简历并填写 Profile</button>
           <span id="importStatus"></span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>AI 简历解析设置</h2>
+        <p class="hint">可选。开启后，ApplyPilot 会调用你填写的 AI API 解析简历文本并返回标准 Profile JSON。扫描版 PDF 仍需要 OCR 才能提取文字。</p>
+        <div class="grid">
+          <label class="wide checkbox-label"><input id="aiResumeEnabled" type="checkbox"> 启用 AI 简历解析</label>
+          <label>API 类型
+            <select id="aiResumeApiStyle">
+              <option value="responses">Responses API</option>
+              <option value="chat">Chat Completions API</option>
+            </select>
+          </label>
+          <label>Base URL<input id="aiResumeBaseUrl" placeholder="https://api.openai.com/v1"></label>
+          <label>Model<input id="aiResumeModel" placeholder="gpt-4.1-mini"></label>
+          <label class="wide">API Key<input id="aiResumeApiKey" type="password" autocomplete="off" placeholder="只保存到本地浏览器 storage"></label>
+          <label class="wide">自定义解析提示词（可选）<textarea id="aiResumePrompt" rows="5" placeholder="留空使用默认中文/英文简历解析提示词"></textarea></label>
+        </div>
+        <div class="actions-row setting-actions">
+          <button id="saveAiResumeSettings">保存 AI 设置</button>
+          <span id="aiResumeSettingsStatus" class="hint"></span>
         </div>
       </section>
 
@@ -106,6 +128,7 @@
       <div id="toast" class="toast" hidden></div>
     </main>
     <script src="resumeParser.js"></script>
+    <script src="aiResumeParser.js"></script>
     <script src="options.js"></script>
   </body>
 </html>
