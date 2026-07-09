@@ -8,17 +8,18 @@ window.AiResumeParser = (() => {
     prompt: ""
   };
 
-  const DEFAULT_PROMPT = `You are ApplyPilot's resume parser. Parse the resume text into strict JSON only.
+  const DEFAULT_PROMPT = `You are ApplyPilot's resume parser. Parse the resume into strict JSON only.
 
 Rules:
 - Return only one JSON object. No markdown fences. No comments.
 - Do not invent information not present in the resume.
-- For Chinese resumes, understand headings such as 教育背景、教育经历、实习经历、工作经历、项目经历、技能、证书、语言能力.
-- Never treat section headings such as 教育背景 or 项目经历 as a person's name.
+- For Chinese resumes, understand headings such as 教育背景、教育经历、实习经历、工作经历、科研经历、校园经历、项目经历、技能、证书、语言能力、其他信息.
+- Never treat section headings such as 教育背景、实习经历、项目经历、其他信息 as a person's name.
 - Extract the real candidate name from the top identity/header area when possible.
-- Phone should be the real contact phone number only. Prefer valid Chinese mobile numbers such as 1xxxxxxxxxx when present. Do not use student IDs, dates, postal codes, or random number sequences.
-- Separate internship/work experience from project experience. Company/employer items go to experience; standalone product/research/course projects go to projects.
-- Extract start/end dates for education, work, and projects when present. Use strings such as 2025.07, 2025-07, or 至今.
+- Phone should be the real contact phone number only. Prefer valid Chinese mobile numbers such as 1xxxxxxxxxx when present. Do not use student IDs, dates, postal codes, course codes, or random number sequences.
+- Separate sections carefully. Company/employer/internship/research assistant/student organization items go to experience. Standalone product/research/course projects go to projects.
+- If the resume does not contain a clear 项目经历 / Projects section, return projects as an empty array. Do not move internships or research experience into projects merely because bullet points mention 项目.
+- Extract start/end dates for education, work, research, campus experience, and projects when present. Use strings such as 2025.07, 2025-07, or 至今.
 - Preserve useful bullet points in description fields.
 - Arrays must be arrays even when empty.
 
@@ -57,12 +58,15 @@ Return this exact schema:
 }`;
 
   async function parseResumeText(text, settings = {}) {
+    return parseResume({ text, settings });
+  }
+
+  async function parseResume({ file = null, text = "", settings = {} } = {}) {
     const resolved = normalizeSettings(settings);
     validateSettings(resolved);
-    const prompt = buildPrompt(text, resolved.prompt || DEFAULT_PROMPT);
     const responseText = resolved.apiStyle === "chat"
-      ? await callChatCompletions(prompt, resolved)
-      : await callResponses(prompt, resolved);
+      ? await callChatCompletions(buildPrompt(text, resolved.prompt || DEFAULT_PROMPT), resolved)
+      : await callResponses(buildPrompt(text, resolved.prompt || DEFAULT_PROMPT), resolved, file);
     const json = extractJsonObject(responseText);
     return normalizeProfile(json, text);
   }
@@ -74,7 +78,8 @@ Return this exact schema:
       baseUrl: String(settings?.baseUrl || DEFAULT_SETTINGS.baseUrl).replace(/\/+$/, ""),
       model: String(settings?.model || DEFAULT_SETTINGS.model).trim(),
       apiKey: String(settings?.apiKey || "").trim(),
-      apiStyle: settings?.apiStyle === "chat" ? "chat" : "responses"
+      apiStyle: settings?.apiStyle === "chat" ? "chat" : "responses",
+      prompt: String(settings?.prompt || "")
     };
   }
 
@@ -85,10 +90,27 @@ Return this exact schema:
   }
 
   function buildPrompt(resumeText, parserPrompt) {
-    return `${parserPrompt}\n\n# Resume text\n${String(resumeText || "").slice(0, 60000)}`;
+    const text = String(resumeText || "").trim();
+    const textBlock = text ? `\n\n# Extracted resume text\n${text.slice(0, 60000)}` : "";
+    return `${parserPrompt}${textBlock}`;
   }
 
-  async function callResponses(prompt, settings) {
+  async function callResponses(prompt, settings, file) {
+    const content = [
+      {
+        type: "input_text",
+        text: prompt
+      }
+    ];
+
+    if (file && isLikelyPdf(file)) {
+      content.push({
+        type: "input_file",
+        filename: file.name || "resume.pdf",
+        file_data: await fileToDataUrl(file)
+      });
+    }
+
     const response = await fetch(`${settings.baseUrl}/responses`, {
       method: "POST",
       headers: {
@@ -100,12 +122,7 @@ Return this exact schema:
         input: [
           {
             role: "user",
-            content: [
-              {
-                type: "input_text",
-                text: prompt
-              }
-            ]
+            content
           }
         ]
       })
@@ -114,8 +131,8 @@ Return this exact schema:
     if (typeof data.output_text === "string" && data.output_text.trim()) return data.output_text;
     const parts = [];
     for (const item of data.output || []) {
-      for (const content of item.content || []) {
-        if (typeof content.text === "string") parts.push(content.text);
+      for (const contentItem of item.content || []) {
+        if (typeof contentItem.text === "string") parts.push(contentItem.text);
       }
     }
     return parts.join("\n");
@@ -215,7 +232,7 @@ Return this exact schema:
         next[field] = textField(source[field]);
       });
       return next;
-    }).filter((item) => Object.values(item).some(Boolean)).slice(0, 20);
+    }).filter((item) => Object.values(item).some(Boolean)).slice(0, 30);
   }
 
   function normalizeArray(value) {
@@ -231,10 +248,24 @@ Return this exact schema:
     return "";
   }
 
+  function isLikelyPdf(file) {
+    return /\.pdf$/i.test(file?.name || "") || file?.type === "application/pdf";
+  }
+
+  function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error || new Error("Failed to read file."));
+      reader.readAsDataURL(file);
+    });
+  }
+
   return {
     DEFAULT_SETTINGS,
     DEFAULT_PROMPT,
     parseResumeText,
+    parseResume,
     normalizeSettings
   };
 })();
