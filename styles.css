@@ -182,7 +182,8 @@ label {
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -193,13 +194,19 @@ textarea {
 }
 
 input:focus,
-textarea:focus {
+textarea:focus,
+select:focus {
   border-color: var(--brand);
   outline: 2px solid rgba(36, 107, 254, 0.14);
 }
 
 .wide {
   grid-column: 1 / -1;
+}
+
+.setting-actions {
+  justify-content: flex-start;
+  margin-top: 12px;
 }
 
 .list {
