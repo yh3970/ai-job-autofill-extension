@@ -18,11 +18,29 @@
 
       <section class="panel">
         <h2>智能导入简历</h2>
-        <p class="hint">支持 DOCX、PDF、TXT。解析在本地完成，导入结果会先填入下方 Profile，保存后生效。</p>
+        <p class="hint">支持 DOCX、可复制文字的 PDF、TXT。解析完全在本地完成，导入结果必须先预览确认，确认前不会写入 Profile。</p>
         <div class="upload-box">
           <input id="resumeFile" type="file" accept=".docx,.pdf,.txt,.text,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain">
-          <button id="importResume">从简历自动填写 Profile</button>
+          <button id="importResume">解析简历并预览</button>
           <span id="importStatus"></span>
+        </div>
+        <div id="importPreview" class="import-preview" hidden>
+          <div class="preview-header">
+            <div>
+              <h3>导入预览</h3>
+              <p id="importPreviewSummary" class="hint"></p>
+            </div>
+            <div class="actions-row">
+              <button id="cancelImport">取消</button>
+              <button id="confirmImport" class="primary">确认导入并保存</button>
+            </div>
+          </div>
+          <div id="importWarning" class="warning" hidden></div>
+          <div id="importPreviewFields" class="preview-fields"></div>
+          <div class="actions-row preview-footer">
+            <button id="cancelImportBottom">取消</button>
+            <button id="confirmImportBottom" class="primary">确认导入并保存</button>
+          </div>
         </div>
       </section>
 

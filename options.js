@@ -24,13 +24,29 @@ const LIST_CONFIG = {
     fields: [
       ["name", "项目名"],
       ["role", "角色"],
+      ["start", "开始时间"],
+      ["end", "结束时间"],
       ["description", "项目描述"],
       ["url", "链接"]
     ]
   }
 };
 
+const PREVIEW_PERSONAL_FIELDS = [
+  ["personal.fullName", "姓名"],
+  ["personal.chineseName", "中文名"],
+  ["personal.firstName", "名"],
+  ["personal.lastName", "姓"],
+  ["personal.email", "邮箱"],
+  ["personal.phone", "电话"],
+  ["personal.location", "所在地"],
+  ["personal.linkedin", "LinkedIn"],
+  ["personal.github", "GitHub"],
+  ["personal.portfolio", "作品集/个人网站"]
+];
+
 let profile = null;
+let pendingImport = null;
 
 init();
 
@@ -43,6 +59,10 @@ async function init() {
 
   document.querySelector("#saveProfile").addEventListener("click", saveProfile);
   document.querySelector("#importResume").addEventListener("click", importResume);
+  document.querySelector("#confirmImport").addEventListener("click", confirmImportPreview);
+  document.querySelector("#cancelImport").addEventListener("click", cancelImportPreview);
+  document.querySelector("#confirmImportBottom").addEventListener("click", confirmImportPreview);
+  document.querySelector("#cancelImportBottom").addEventListener("click", cancelImportPreview);
   document.querySelector("#clearMemory").addEventListener("click", clearMemory);
   document.querySelectorAll("[data-add]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -97,28 +117,7 @@ function renderList(key, items) {
 }
 
 async function saveProfile() {
-  const nextProfile = structuredClone(profile);
-  document.querySelectorAll("[data-path]").forEach((input) => {
-    setPath(nextProfile, input.dataset.path, input.value.trim());
-  });
-  nextProfile.preferences ||= {};
-  nextProfile.preferences.allowSensitiveAutofill = document.querySelector("#allowSensitiveAutofill").checked;
-  nextProfile.skills = document.querySelector("#skills").value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean);
-  nextProfile.languages = document.querySelector("#languages").value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean);
-  nextProfile.certifications = document.querySelector("#certifications").value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean);
-
-  Object.keys(LIST_CONFIG).forEach((key) => {
-    nextProfile[key] = [];
-  });
-  document.querySelectorAll("[data-list]").forEach((input) => {
-    const listName = input.dataset.list;
-    const index = Number(input.dataset.index);
-    const field = input.dataset.field;
-    nextProfile[listName] ||= [];
-    nextProfile[listName][index] ||= {};
-    nextProfile[listName][index][field] = input.value.trim();
-  });
-
+  const nextProfile = collectProfileFromForm();
   profile = nextProfile;
   await chrome.storage.local.set({ profile });
   showToast("Profile 已保存");
@@ -134,19 +133,143 @@ async function importResume() {
   }
 
   status.textContent = "正在本地解析...";
+  hideImportPreview();
   try {
     const parser = window.ResumeParser || ResumeParser;
     const parsed = await parser.parseFile(file);
-    profile = mergeImportedProfile(collectProfileFromForm(), parsed.profile, parsed.fileName);
-    renderProfile(profile);
-    await chrome.storage.local.set({ profile });
-    status.textContent = `已导入 ${parsed.fileName}，提取 ${parsed.stats.textLength} 字，识别 ${parsed.stats.recognized} 项`;
-    showToast("已从简历自动填写并保存 Profile");
+    const current = collectProfileFromForm();
+    const previewProfile = mergeImportedProfile(current, parsed.profile, parsed.fileName);
+    pendingImport = {
+      parsed,
+      profile: previewProfile
+    };
+    renderImportPreview(previewProfile, parsed);
+    status.textContent = `已解析 ${parsed.fileName}，提取 ${parsed.stats.textLength} 字，识别 ${parsed.stats.recognized} 项；请先预览确认，确认前不会保存。`;
+    showToast("请检查导入预览");
   } catch (error) {
     console.error(error);
     status.textContent = "解析失败，可尝试复制简历文字到简历文本区";
     showToast("简历解析失败");
   }
+}
+
+function renderImportPreview(data, parsed) {
+  const preview = document.querySelector("#importPreview");
+  const warning = document.querySelector("#importWarning");
+  const summary = document.querySelector("#importPreviewSummary");
+  const fields = document.querySelector("#importPreviewFields");
+  const warnings = Array.isArray(parsed.warnings) ? parsed.warnings.filter(Boolean) : [];
+
+  warning.hidden = warnings.length === 0;
+  warning.innerHTML = warnings.map((item) => `<div>${escapeHtml(item)}</div>`).join("");
+  summary.textContent = `文件：${parsed.fileName}｜提取 ${parsed.stats.textLength} 字｜识别 ${parsed.stats.recognized} 项`;
+  fields.innerHTML = buildImportPreviewFields(data);
+  preview.hidden = false;
+  preview.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function buildImportPreviewFields(data) {
+  const personalFields = PREVIEW_PERSONAL_FIELDS.map(([path, label]) => {
+    return `<label>${label}<input data-preview-path="${path}" value="${escapeHtml(getPath(data, path) || "")}"></label>`;
+  }).join("");
+
+  return `
+    <section class="preview-section">
+      <h3>基础信息</h3>
+      <div class="grid">${personalFields}</div>
+    </section>
+    <section class="preview-section">
+      <h3>个人简介</h3>
+      <label class="wide">Summary<textarea data-preview-path="summary" rows="4">${escapeHtml(data.summary || "")}</textarea></label>
+    </section>
+    ${buildPreviewList("education", data.education || [])}
+    ${buildPreviewList("experience", data.experience || [])}
+    ${buildPreviewList("projects", data.projects || [])}
+    <section class="preview-section">
+      <h3>技能/语言/证书</h3>
+      <div class="grid">
+        <label class="wide">技能<textarea data-preview-array="skills" rows="3">${escapeHtml((data.skills || []).join(", "))}</textarea></label>
+        <label class="wide">语言<textarea data-preview-array="languages" rows="2">${escapeHtml((data.languages || []).join(", "))}</textarea></label>
+        <label class="wide">证书<textarea data-preview-array="certifications" rows="2">${escapeHtml((data.certifications || []).join(", "))}</textarea></label>
+      </div>
+    </section>
+  `;
+}
+
+function buildPreviewList(key, items) {
+  const config = LIST_CONFIG[key];
+  const titleMap = {
+    education: "教育经历",
+    experience: "工作/实习经历",
+    projects: "项目经历"
+  };
+  const cards = items.length ? items.map((item, index) => {
+    const controls = config.fields.map(([field, label]) => {
+      const value = item[field] || "";
+      if (field === "description") {
+        return `<label class="wide">${label}<textarea data-preview-list="${key}" data-index="${index}" data-field="${field}" rows="3">${escapeHtml(value)}</textarea></label>`;
+      }
+      return `<label>${label}<input data-preview-list="${key}" data-index="${index}" data-field="${field}" value="${escapeHtml(value)}"></label>`;
+    }).join("");
+    return `<article class="item-card"><div class="item-header"><strong>${index + 1}</strong></div><div class="grid">${controls}</div></article>`;
+  }).join("") : `<p class="hint">未识别到${titleMap[key]}，你可以确认后在下方 Profile 里手动添加。</p>`;
+
+  return `
+    <section class="preview-section">
+      <h3>${titleMap[key]}</h3>
+      <div class="list">${cards}</div>
+    </section>
+  `;
+}
+
+async function confirmImportPreview() {
+  if (!pendingImport) {
+    showToast("没有待确认的导入内容");
+    return;
+  }
+  const nextProfile = collectProfileFromPreview(pendingImport.profile);
+  profile = withProfileDefaults(nextProfile);
+  renderProfile(profile);
+  await chrome.storage.local.set({ profile });
+  hideImportPreview();
+  document.querySelector("#importStatus").textContent = `已确认并保存 ${pendingImport.parsed.fileName}`;
+  pendingImport = null;
+  showToast("导入内容已确认并保存");
+}
+
+function cancelImportPreview() {
+  pendingImport = null;
+  hideImportPreview();
+  document.querySelector("#importStatus").textContent = "已取消导入，Profile 未保存任何变更";
+  showToast("已取消导入");
+}
+
+function hideImportPreview() {
+  const preview = document.querySelector("#importPreview");
+  if (preview) preview.hidden = true;
+}
+
+function collectProfileFromPreview(baseProfile) {
+  const next = structuredClone(baseProfile);
+  document.querySelectorAll("[data-preview-path]").forEach((input) => {
+    setPath(next, input.dataset.previewPath, input.value.trim());
+  });
+  document.querySelectorAll("[data-preview-array]").forEach((input) => {
+    next[input.dataset.previewArray] = splitCsvTextarea(input.value);
+  });
+
+  Object.keys(LIST_CONFIG).forEach((key) => {
+    next[key] = [];
+  });
+  document.querySelectorAll("[data-preview-list]").forEach((input) => {
+    const listName = input.dataset.previewList;
+    const index = Number(input.dataset.index);
+    const field = input.dataset.field;
+    next[listName] ||= [];
+    next[listName][index] ||= {};
+    next[listName][index][field] = input.value.trim();
+  });
+  return next;
 }
 
 async function clearMemory() {
@@ -226,9 +349,9 @@ function collectProfileFromForm() {
   });
   current.preferences ||= {};
   current.preferences.allowSensitiveAutofill = document.querySelector("#allowSensitiveAutofill").checked;
-  current.skills = document.querySelector("#skills").value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean);
-  current.languages = document.querySelector("#languages").value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean);
-  current.certifications = document.querySelector("#certifications").value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean);
+  current.skills = splitCsvTextarea(document.querySelector("#skills").value);
+  current.languages = splitCsvTextarea(document.querySelector("#languages").value);
+  current.certifications = splitCsvTextarea(document.querySelector("#certifications").value);
   Object.keys(LIST_CONFIG).forEach((key) => {
     current[key] = [];
   });
@@ -310,6 +433,10 @@ function mergeDefaults(defaults, current) {
     merged[key] = mergeDefaults(defaults[key], current?.[key]);
   });
   return merged;
+}
+
+function splitCsvTextarea(value) {
+  return String(value || "").split(/[,，\n]/).map((item) => item.trim()).filter(Boolean);
 }
 
 function getPath(source, path) {
