@@ -1,7 +1,29 @@
 window.ResumeParser = (() => {
+  const PDF_TEXT_MIN_CHARS = 80;
+  const SCANNED_PDF_WARNING = "PDF 文本提取结果过少，可能是扫描件/图片型 PDF；当前版本暂不支持 OCR，请改用 DOCX/TXT 或可复制文字的 PDF。";
+
+  const SECTION_DEFS = {
+    summary: [/^(summary|profile|objective|about)$/i, /^(个人简介|自我评价|求职意向|个人总结)$/],
+    education: [/^(education|academic|academic background)$/i, /^(教育背景|教育经历|学历背景|学习经历|教育)$/],
+    internship: [/^(internship|internships|internship experience)$/i, /^(实习经历|实习经验|实习)$/],
+    experience: [/^(experience|work experience|employment|professional experience|work history)$/i, /^(工作经历|工作经验|职业经历|全职经历|工作)$/],
+    projects: [/^(projects|project|project experience)$/i, /^(项目经历|项目经验|项目)$/],
+    skills: [/^(skills|technical skills|technologies|core skills)$/i, /^(技能|专业技能|技术技能|核心技能)$/],
+    languages: [/^(languages|language)$/i, /^(语言能力|语言)$/],
+    certifications: [/^(certifications|certificates|licenses|awards)$/i, /^(证书|资格证书|荣誉证书|获奖经历|荣誉奖项)$/]
+  };
+
+  const SECTION_HEADING_WORDS = new Set([
+    "summary", "profile", "objective", "about", "education", "academic", "experience", "employment", "internship",
+    "projects", "project", "skills", "languages", "certifications", "certificates", "licenses", "resume", "cv",
+    "个人简介", "自我评价", "求职意向", "教育背景", "教育经历", "学历背景", "学习经历", "教育", "实习经历", "实习经验",
+    "工作经历", "工作经验", "职业经历", "项目经历", "项目经验", "技能", "专业技能", "技术技能", "语言能力", "语言", "证书", "资格证书", "荣誉证书"
+  ]);
+
   async function parseFile(file) {
     const name = file.name || "";
     const lower = name.toLowerCase();
+    const warnings = [];
     let text = "";
 
     if (lower.endsWith(".docx")) {
@@ -13,11 +35,16 @@ window.ResumeParser = (() => {
     }
 
     const normalizedText = cleanText(text);
+    if (lower.endsWith(".pdf") && countUsefulTextChars(normalizedText) < PDF_TEXT_MIN_CHARS) {
+      warnings.push(SCANNED_PDF_WARNING);
+    }
+
     const profile = inferProfileAgent(normalizedText);
     return {
       fileName: name,
       text: normalizedText,
       profile,
+      warnings,
       stats: getProfileStats(profile, normalizedText)
     };
   }
@@ -128,7 +155,7 @@ window.ResumeParser = (() => {
       chunks.push(decodePdfString(match[0].replace(/\)\s*T[jJ]$/, "").slice(1)));
     }
 
-    const arrayPattern = /\[((?:\s*\((?:\\.|[^\\)])*\)\s*-?\d*)+)\]\s*TJ/g;
+    const arrayPattern = /\[((?:\s*\((?:\\.|[^\\])*\)\s*-?\d*)+)\]\s*TJ/g;
     while ((match = arrayPattern.exec(raw))) {
       const inner = match[1];
       const parts = inner.match(/\((?:\\.|[^\\)])*\)/g) || [];
@@ -166,106 +193,252 @@ window.ResumeParser = (() => {
       .replace(/\\([0-7]{3})/g, (_, octal) => String.fromCharCode(parseInt(octal, 8)));
   }
 
-  function inferProfile(text) {
-    const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
-    const firstMeaningfulLine = lines.find((line) => !/@|linkedin|github|phone|电话|邮箱/i.test(line)) || "";
-    const email = firstMatch(text, /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-    const phone = firstMatch(text, /(?:\+?\d[\d\s().-]{7,}\d)/);
-    const linkedin = firstMatch(text, /https?:\/\/(?:www\.)?linkedin\.com\/[^\s)]+/i);
-    const github = firstMatch(text, /https?:\/\/(?:www\.)?github\.com\/[^\s)]+/i);
-    const portfolio = firstMatch(text, /https?:\/\/(?!.*(?:linkedin|github))[^\s)]+/i);
-    const name = inferName(firstMeaningfulLine);
+  function inferProfileAgent(text) {
+    const lines = splitLines(text);
+    const sections = segmentResume(lines);
+    const header = sections.header || [];
+    const name = inferNameAgent(header.length ? header : lines.slice(0, 10));
 
     return {
       personal: {
         ...name,
-        email,
-        phone,
-        linkedin,
-        github,
-        portfolio,
-        location: inferLocation(lines)
+        email: firstMatch(text, /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i),
+        phone: extractPhone(text),
+        linkedin: firstMatch(text, /https?:\/\/(?:www\.)?linkedin\.com\/[^\s)]+/i),
+        github: firstMatch(text, /https?:\/\/(?:www\.)?github\.com\/[^\s)]+/i),
+        portfolio: firstMatch(text, /https?:\/\/(?!.*(?:linkedin|github))[^\s)]+/i),
+        location: inferLocationAgent(header.join("\n"))
       },
-      summary: section(text, ["summary", "profile", "objective", "个人简介", "自我评价", "求职意向"], 5),
-      education: inferItems(section(text, ["education", "教育经历", "教育背景"], 12), ["school", "degree", "major", "start", "end"]),
-      experience: inferItems(section(text, ["experience", "work experience", "employment", "工作经历", "实习经历"], 18), ["company", "title", "start", "end", "description"]),
-      projects: inferItems(section(text, ["projects", "project experience", "项目经历"], 16), ["name", "role", "description", "url"]),
-      skills: splitList(section(text, ["skills", "technical skills", "技能", "专业技能"], 8)),
-      languages: splitList(section(text, ["languages", "语言能力", "语言"], 4)),
-      certifications: splitList(section(text, ["certifications", "certificates", "证书", "资格证书"], 6)),
+      summary: pickSection(sections, ["summary"]).slice(0, 6).join("\n"),
+      education: parseExperienceLikeItems(pickSection(sections, ["education"]), "education"),
+      experience: parseExperienceLikeItems([
+        ...pickSection(sections, ["internship"]),
+        ...pickSection(sections, ["experience"])
+      ], "experience"),
+      projects: parseExperienceLikeItems(pickSection(sections, ["projects"]), "project"),
+      skills: splitListAgent(pickSection(sections, ["skills"]).join("\n")),
+      languages: splitListAgent(pickSection(sections, ["languages"]).join("\n")),
+      certifications: splitListAgent(pickSection(sections, ["certifications"]).join("\n")),
       resumeText: text
     };
   }
 
-  function inferName(line) {
-    const cleaned = line.replace(/[|,，].*$/, "").trim();
-    const chineseName = /^[\u4e00-\u9fa5]{2,5}$/.test(cleaned) ? cleaned : "";
-    const parts = /^[A-Za-z][A-Za-z\s.'-]{1,60}$/.test(cleaned) ? cleaned.split(/\s+/) : [];
+  function segmentResume(lines) {
+    const sections = { header: [] };
+    let current = "header";
+    for (const rawLine of lines) {
+      const line = stripBullet(rawLine);
+      const heading = detectSectionHeading(line);
+      if (heading) {
+        current = heading;
+        sections[current] ||= [];
+        continue;
+      }
+      sections[current] ||= [];
+      sections[current].push(line);
+    }
+    return sections;
+  }
+
+  function detectSectionHeading(line) {
+    const normalizedLine = normalizeHeading(line);
+    if (!normalizedLine || normalizedLine.length > 40) return "";
+    for (const [section, patterns] of Object.entries(SECTION_DEFS)) {
+      if (patterns.some((pattern) => pattern.test(normalizedLine))) return section;
+    }
+    return "";
+  }
+
+  function normalizeHeading(line) {
+    return String(line || "")
+      .replace(/^[-•*#\d.、\s]+/, "")
+      .replace(/[：:|｜\s]/g, "")
+      .trim()
+      .toLowerCase();
+  }
+
+  function inferNameAgent(lines) {
+    const cleanedLines = lines.map((line) => stripBullet(line).replace(/[|｜,，].*$/, "").trim()).filter(Boolean);
+    const candidate = cleanedLines.find(isLikelyNameLine) || "";
+    const chineseName = /^[\u4e00-\u9fa5·]{2,6}$/.test(candidate) ? candidate : "";
+    const englishParts = /^[A-Za-z][A-Za-z\s.'-]{1,60}$/.test(candidate) ? candidate.split(/\s+/) : [];
     return {
-      fullName: cleaned,
+      fullName: candidate,
       chineseName,
-      firstName: parts[0] || "",
-      middleName: parts.length > 2 ? parts.slice(1, -1).join(" ") : "",
-      lastName: parts.length > 1 ? parts[parts.length - 1] : ""
+      firstName: englishParts[0] || "",
+      middleName: englishParts.length > 2 ? englishParts.slice(1, -1).join(" ") : "",
+      lastName: englishParts.length > 1 ? englishParts[englishParts.length - 1] : ""
     };
   }
 
-  function inferLocation(lines) {
-    const locationLine = lines.find((line) => /location|address|所在地|地址|城市/i.test(line));
-    if (!locationLine) return "";
-    return locationLine.replace(/^(location|address|所在地|地址|城市)[:：\s]*/i, "").trim();
+  function isLikelyNameLine(line) {
+    const compact = normalizeHeading(line);
+    if (!line || SECTION_HEADING_WORDS.has(compact) || detectSectionHeading(line)) return false;
+    if (/@|http|linkedin|github|gitee|email|mail|phone|mobile|tel|电话|手机|邮箱|地址|所在地|出生|年龄|性别|民族|政治面貌|求职/i.test(line)) return false;
+    if (/\d{2,}/.test(line)) return false;
+    if (/简历|个人信息|基本信息|curriculum vitae|resume/i.test(line)) return false;
+    if (/^[\u4e00-\u9fa5·]{2,6}$/.test(line)) return !/(背景|经历|经验|技能|证书|项目|教育|工作|实习|语言|荣誉|评价|意向)$/.test(line);
+    if (/^[A-Za-z][A-Za-z\s.'-]{1,60}$/.test(line)) return !SECTION_HEADING_WORDS.has(compact);
+    return false;
   }
 
-  function inferItems(text, keys) {
-    if (!text) return [];
-    const blocks = text.split(/\n(?=\S)/).map((block) => block.trim()).filter(Boolean).slice(0, 6);
-    return blocks.map((block) => {
-      const lines = block.split(/\n/).map((line) => line.trim()).filter(Boolean);
-      const dates = firstMatch(block, /(20\d{2}|19\d{2})\s*[-–~至到]\s*(present|now|current|20\d{2}|19\d{2}|至今)/i);
-      const item = {};
-      item[keys[0]] = lines[0] || "";
-      if (keys[1]) item[keys[1]] = lines[1] || "";
-      if (keys.includes("start")) item.start = dates.split(/[-–~至到]/)[0]?.trim() || "";
-      if (keys.includes("end")) item.end = dates.split(/[-–~至到]/)[1]?.trim() || "";
-      if (keys.includes("description")) item.description = lines.slice(1).join("\n");
-      if (keys.includes("url")) item.url = firstMatch(block, /https?:\/\/[^\s)]+/i);
-      return item;
-    });
-  }
-
-  function section(text, headings, maxLines) {
-    const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
-    const start = lines.findIndex((line) => headings.some((heading) => normalize(line).includes(normalize(heading))));
-    if (start < 0) return "";
-
-    const nextHeading = /^(summary|profile|objective|education|experience|employment|projects|skills|languages|certifications|个人|自我|求职|教育|工作|实习|项目|技能|语言|证书)/i;
-    const collected = [];
-    for (let index = start + 1; index < lines.length && collected.length < maxLines; index += 1) {
-      if (collected.length && nextHeading.test(lines[index])) break;
-      collected.push(lines[index]);
+  function extractPhone(text) {
+    const pattern = /(?:^|[^\d])((?:\+?86[-\s]?)?1[3-9]\d(?:[-\s]?\d){8})(?!\d)/g;
+    let match;
+    while ((match = pattern.exec(String(text || "")))) {
+      const candidate = match[1];
+      let digits = candidate.replace(/\D/g, "");
+      if (digits.startsWith("86") && digits.length === 13) digits = digits.slice(2);
+      if (/^1[3-9]\d{9}$/.test(digits)) return candidate.trim();
     }
-    return collected.join("\n");
+    return "";
   }
 
-  function splitList(text) {
-    return text.split(/[,，;；\n|]/).map((item) => item.trim()).filter(Boolean).slice(0, 40);
+  function inferLocationAgent(text) {
+    const labeled = firstMatch(text, /(?:location|address|city|所在地|地址|城市)[:：\s]+([^\n]+)/i);
+    if (labeled) return labeled.replace(/^(location|address|city|所在地|地址|城市)[:：\s]+/i, "").trim();
+    return firstMatch(text, /\b(?:Beijing|Shanghai|Shenzhen|Guangzhou|Hangzhou|New York|London|Toronto|Singapore|Hong Kong)\b/i);
+  }
+
+  function parseExperienceLikeItems(lines, type) {
+    if (!lines.length) return [];
+    return splitResumeBlocks(lines)
+      .slice(0, 10)
+      .map((block) => parseItemBlock(block, type))
+      .filter((item) => Object.values(item).some(Boolean));
+  }
+
+  function splitResumeBlocks(lines) {
+    const blocks = [];
+    let current = [];
+    for (const rawLine of lines) {
+      const line = stripBullet(rawLine);
+      if (!line) continue;
+      const startsNew = current.length > 0 && (
+        (hasDateRange(line) && current.some((item) => hasDateRange(item))) ||
+        (looksLikeEntryTitle(line) && current.length >= 2)
+      );
+      if (startsNew) {
+        blocks.push(current);
+        current = [];
+      }
+      current.push(line);
+    }
+    if (current.length) blocks.push(current);
+    return blocks;
+  }
+
+  function parseItemBlock(lines, type) {
+    const text = lines.join("\n");
+    const dates = parseDateRange(text);
+    if (type === "education") {
+      const school = findLine(lines, /大学|学院|学校|university|college|school/i, 0);
+      return {
+        school,
+        degree: findLine(lines, /bachelor|master|phd|doctor|degree|学士|硕士|博士|本科|研究生|学位/i, 1),
+        major: findLine(lines, /major|专业|finance|business|computer|engineering|经济|金融|管理|计算机|工程|会计/i, 2),
+        start: dates.start,
+        end: dates.end,
+        description: lines.filter((line) => line !== school).slice(0, 6).join("\n")
+      };
+    }
+    if (type === "project") {
+      const name = findLine(lines, /项目|project|system|platform|app|website|模型|系统|平台/i, 0);
+      return {
+        name,
+        role: findLine(lines, /role|owner|lead|developer|designer|负责|角色|成员|负责人/i, 1),
+        start: dates.start,
+        end: dates.end,
+        description: lines.filter((line) => line !== name).join("\n"),
+        url: firstMatch(text, /https?:\/\/[^\s)]+/i)
+      };
+    }
+    const company = findLine(lines, /公司|银行|证券|咨询|科技|集团|事务所|company|inc\.?|ltd\.?|llc|corp|bank|securities|consulting/i, 0);
+    return {
+      company,
+      title: findLine(lines, /intern|engineer|analyst|manager|assistant|developer|research|实习|工程师|分析师|经理|助理|研究|运营|产品|开发/i, 1),
+      start: dates.start,
+      end: dates.end,
+      description: lines.filter((line) => line !== company).join("\n")
+    };
+  }
+
+  function parseDateRange(text) {
+    const date = "(?:19|20)\\d{2}(?:[./年-]\\s?\\d{1,2}月?)?";
+    const match = String(text || "").match(new RegExp(`(${date})\\s*(?:-|–|—|~|至|到|to)\\s*(present|current|now|至今|今|${date})`, "i"));
+    return {
+      start: match ? normalizeDate(match[1]) : "",
+      end: match ? normalizeDate(match[2]) : ""
+    };
+  }
+
+  function normalizeDate(value) {
+    return String(value || "")
+      .replace(/\s+/g, "")
+      .replace(/年/g, ".")
+      .replace(/月/g, "")
+      .replace(/\.$/, "")
+      .replace(/^(present|current|now|今)$/i, "至今");
+  }
+
+  function hasDateRange(line) {
+    return /(?:19|20)\d{2}.*(?:-|–|—|~|至|到|to).*(?:present|current|now|至今|今|(?:19|20)\d{2})/i.test(line);
+  }
+
+  function looksLikeEntryTitle(line) {
+    if (detectSectionHeading(line)) return false;
+    if (/@|http|电话|手机|邮箱|email/i.test(line)) return false;
+    return /^[\u4e00-\u9fa5A-Za-z0-9 .,&()《》「」'’·-]{2,90}$/.test(line) &&
+      /公司|大学|学院|项目|银行|证券|咨询|科技|集团|University|College|Company|Project|Inc|Ltd|LLC/i.test(line);
+  }
+
+  function findLine(lines, pattern, fallbackIndex) {
+    return lines.find((line) => pattern.test(line)) || lines[fallbackIndex] || "";
+  }
+
+  function pickSection(sections, names) {
+    for (const name of names) {
+      if (sections[name]?.length) return sections[name];
+    }
+    return [];
+  }
+
+  function splitListAgent(text) {
+    return String(text || "")
+      .split(/[,，;；|、\n]/)
+      .map((item) => stripBullet(item).trim())
+      .filter((item) => item && item.length <= 80 && !detectSectionHeading(item))
+      .slice(0, 60);
   }
 
   function firstMatch(text, pattern) {
     const match = String(text || "").match(pattern);
-    return match ? match[0].trim() : "";
+    if (!match) return "";
+    return (match[1] || match[0]).trim();
   }
 
   function cleanText(text) {
     return String(text || "")
       .replace(/\r/g, "\n")
+      .replace(/[\u00a0\t]+/g, " ")
       .replace(/[ \t]+\n/g, "\n")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
   }
 
-  function normalize(value) {
-    return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+  function splitLines(text) {
+    return cleanText(text).split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  }
+
+  function stripBullet(value) {
+    return String(value || "")
+      .replace(/^[-•*●▪▫◆◇·\s]+/, "")
+      .replace(/^\d{1,2}[.、)]\s+/, "")
+      .trim();
+  }
+
+  function countUsefulTextChars(text) {
+    return String(text || "").replace(/\s/g, "").length;
   }
 
   function getProfileStats(profile, text) {
@@ -285,173 +458,6 @@ window.ResumeParser = (() => {
       textLength: text.length,
       recognized: fields.filter(Boolean).length + listCount
     };
-  }
-
-  function inferProfileAgent(text) {
-    const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
-    const sections = segmentResume(lines);
-    const header = lines.slice(0, 12).join("\n");
-    const name = inferNameAgent(lines);
-
-    return {
-      personal: {
-        ...name,
-        email: firstMatch(text, /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i),
-        phone: firstMatch(text, /(?:\+?\d[\d\s().-]{7,}\d)/),
-        linkedin: firstMatch(text, /https?:\/\/(?:www\.)?linkedin\.com\/[^\s)]+/i),
-        github: firstMatch(text, /https?:\/\/(?:www\.)?github\.com\/[^\s)]+/i),
-        portfolio: firstMatch(text, /https?:\/\/(?!.*(?:linkedin|github))[^\s)]+/i),
-        location: inferLocationAgent(header)
-      },
-      summary: pickSection(sections, ["summary", "profile", "objective", "about", "self"]).slice(0, 6).join("\n"),
-      education: parseExperienceLikeItems(pickSection(sections, ["education", "academic"]), "education"),
-      experience: parseExperienceLikeItems(pickSection(sections, ["experience", "employment", "internship", "work"]), "experience"),
-      projects: parseExperienceLikeItems(pickSection(sections, ["projects", "project"]), "project"),
-      skills: splitListAgent(pickSection(sections, ["skills", "technical"]).join("\n")),
-      languages: splitListAgent(pickSection(sections, ["languages", "language"]).join("\n")),
-      certifications: splitListAgent(pickSection(sections, ["certifications", "certificates", "licenses"]).join("\n")),
-      resumeText: text
-    };
-  }
-
-  function segmentResume(lines) {
-    const sectionNames = {
-      summary: [/summary|profile|objective|about/i, /\u4e2a\u4eba\u7b80\u4ecb|\u81ea\u6211\u8bc4\u4ef7|\u6c42\u804c\u610f\u5411/],
-      education: [/education|academic|university|college/i, /\u6559\u80b2\u7ecf\u5386|\u6559\u80b2\u80cc\u666f|\u5b66\u5386/],
-      experience: [/experience|employment|internship|work history|professional/i, /\u5de5\u4f5c\u7ecf\u5386|\u5b9e\u4e60\u7ecf\u5386|\u804c\u4e1a\u7ecf\u5386/],
-      projects: [/projects?|project experience/i, /\u9879\u76ee\u7ecf\u5386|\u9879\u76ee/],
-      skills: [/skills?|technical skills|technologies/i, /\u6280\u80fd|\u4e13\u4e1a\u6280\u80fd|\u6280\u672f/],
-      languages: [/languages?/i, /\u8bed\u8a00\u80fd\u529b|\u8bed\u8a00/],
-      certifications: [/certifications?|certificates?|licenses?/i, /\u8bc1\u4e66|\u8d44\u683c\u8bc1\u4e66/]
-    };
-
-    const sections = { header: [] };
-    let current = "header";
-    for (const line of lines) {
-      const heading = Object.entries(sectionNames).find(([, patterns]) => {
-        const compact = line.replace(/[:：\s]/g, "");
-        return patterns.some((pattern) => pattern.test(line) || pattern.test(compact));
-      });
-      if (heading && line.length < 50) {
-        current = heading[0];
-        sections[current] ||= [];
-        continue;
-      }
-      sections[current] ||= [];
-      sections[current].push(line);
-    }
-    return sections;
-  }
-
-  function pickSection(sections, names) {
-    for (const name of names) {
-      if (sections[name]?.length) return sections[name];
-    }
-    return [];
-  }
-
-  function inferNameAgent(lines) {
-    const candidate = lines.find((line) => {
-      if (/@|http|linkedin|github|\d{3,}/i.test(line)) return false;
-      if (/resume|curriculum vitae|education|experience|skills/i.test(line)) return false;
-      return line.length >= 2 && line.length <= 60;
-    }) || "";
-    const cleaned = candidate.replace(/[|,，].*$/, "").trim();
-    const chineseName = /^[\u4e00-\u9fa5]{2,5}$/.test(cleaned) ? cleaned : "";
-    const englishParts = /^[A-Za-z][A-Za-z\s.'-]{1,60}$/.test(cleaned) ? cleaned.split(/\s+/) : [];
-    return {
-      fullName: cleaned,
-      chineseName,
-      firstName: englishParts[0] || "",
-      middleName: englishParts.length > 2 ? englishParts.slice(1, -1).join(" ") : "",
-      lastName: englishParts.length > 1 ? englishParts[englishParts.length - 1] : ""
-    };
-  }
-
-  function inferLocationAgent(text) {
-    const labeled = firstMatch(text, /(?:location|address|city|所在地|地址|城市)[:：\s]+([^\n]+)/i);
-    if (labeled) return labeled.replace(/^(location|address|city|所在地|地址|城市)[:：\s]+/i, "").trim();
-    const common = firstMatch(text, /\b(?:Beijing|Shanghai|Shenzhen|Guangzhou|Hangzhou|New York|London|Toronto|Singapore|Hong Kong)\b/i);
-    return common;
-  }
-
-  function parseExperienceLikeItems(lines, type) {
-    if (!lines.length) return [];
-    const blocks = splitResumeBlocks(lines).slice(0, 8);
-    return blocks.map((block) => parseItemBlock(block, type)).filter((item) => Object.values(item).some(Boolean));
-  }
-
-  function splitResumeBlocks(lines) {
-    const blocks = [];
-    let current = [];
-    for (const line of lines) {
-      const startsNew = current.length > 0 && (
-        hasDateRange(line) ||
-        (/^[A-Z][A-Za-z0-9 .,&()'-]{2,80}$/.test(line) && current.length >= 2) ||
-        (/^[\u4e00-\u9fa5A-Za-z0-9 .,&()'-]{2,80}$/.test(line) && /公司|大学|学院|项目|University|College|Company/i.test(line))
-      );
-      if (startsNew) {
-        blocks.push(current);
-        current = [];
-      }
-      current.push(line);
-    }
-    if (current.length) blocks.push(current);
-    return blocks;
-  }
-
-  function parseItemBlock(lines, type) {
-    const text = lines.join("\n");
-    const dates = parseDateRange(text);
-    if (type === "education") {
-      return {
-        school: lines[0] || "",
-        degree: findLine(lines, /bachelor|master|phd|doctor|degree|学士|硕士|博士|本科|研究生/i, 1),
-        major: findLine(lines, /major|computer|finance|business|engineering|专业/i, 2),
-        start: dates.start,
-        end: dates.end,
-        description: lines.slice(1).join("\n")
-      };
-    }
-    if (type === "project") {
-      return {
-        name: lines[0] || "",
-        role: findLine(lines, /role|owner|lead|developer|designer|负责|角色/i, 1),
-        description: lines.slice(1).join("\n"),
-        url: firstMatch(text, /https?:\/\/[^\s)]+/i)
-      };
-    }
-    return {
-      company: lines[0] || "",
-      title: findLine(lines, /intern|engineer|analyst|manager|assistant|developer|research|实习|工程师|分析师|经理|助理/i, 1),
-      start: dates.start,
-      end: dates.end,
-      description: lines.slice(1).join("\n")
-    };
-  }
-
-  function parseDateRange(text) {
-    const match = text.match(/((?:19|20)\d{2}(?:[./-]\d{1,2})?)\s*(?:-|–|~|to|至|到)\s*(present|current|now|至今|(?:19|20)\d{2}(?:[./-]\d{1,2})?)/i);
-    return {
-      start: match ? match[1] : "",
-      end: match ? match[2] : ""
-    };
-  }
-
-  function hasDateRange(line) {
-    return /(?:19|20)\d{2}.*(?:-|–|~|to|至|到).*(?:present|current|now|至今|(?:19|20)\d{2})/i.test(line);
-  }
-
-  function findLine(lines, pattern, fallbackIndex) {
-    return lines.find((line) => pattern.test(line)) || lines[fallbackIndex] || "";
-  }
-
-  function splitListAgent(text) {
-    return String(text || "")
-      .split(/[,，;；|、\n]/)
-      .map((item) => item.replace(/^[-•*]\s*/, "").trim())
-      .filter((item) => item && item.length <= 80)
-      .slice(0, 60);
   }
 
   return { parseFile };
