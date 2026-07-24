@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ApplyPilot",
-  "description": "Cross-site job application autofill with local semantic matching, monitored corrections, and reusable memory.",
-  "version": "0.6.3",
+  "description": "Cross-site job application autofill with strict field identity, monitored corrections, and reusable memory.",
+  "version": "0.6.4",
   "permissions": ["activeTab", "storage", "scripting", "webNavigation"],
   "host_permissions": ["<all_urls>"],
   "action": {
@@ -35,6 +35,7 @@
         "repeatedProfileAdapter.js",
         "repeatableSectionManager.js",
         "phoneValueAdapter.js",
+        "fieldSafetyGuard.js",
         "learningMonitor.js",
         "contentScriptV2.js"
       ],
