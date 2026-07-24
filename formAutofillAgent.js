@@ -26,7 +26,7 @@
     ["personal.preferredName", /preferred name|nickname|常用名|英文名/i],
     ["personal.location", /current location|location|city|所在地|城市|居住地/i],
     ["personal.address", /address|street|mailing address|地址|通讯地址/i],
-    ["personal.nationality", /nationality|citizenship|国籍/i],
+    ["personal.nationality", /nationality|citizenship|国籍|所在国家|当前所在国家/i],
     ["personal.linkedin", /linkedin|领英/i], ["personal.github", /github/i],
     ["personal.portfolio", /portfolio|website|personal site|作品集|个人网站/i],
     ["visaSponsorship", /sponsorship|visa sponsorship|签证担保|需要担保/i],
@@ -35,7 +35,7 @@
     ["skillsText", /skills?|technology|tech stack|技能|技术/i],
     ["languagesText", /languages?|语言/i],
     ["certificationsText", /certification|certificate|license|证书|资格/i],
-    ["relocation", /relocat|willing to move|搬迁|异地|调动/i],
+    ["relocation", /relocat|willing to move|搬迁|异地|调动|接受意向城市调剂/i],
     ["desiredSalary", /salary|compensation|薪资|期望薪资/i],
     ["noticePeriod", /notice period|time to join|到岗|入职时间|通知期/i],
     ["availabilityDate", /available date|earliest start|可入职日期|开始工作/i]
@@ -53,14 +53,16 @@
     ["school", /school|university|college|institution|学校|院校|大学/i],
     ["degree", /degree|qualification|education level|学位|学历/i],
     ["major", /major|field of study|discipline|专业/i],
-    ["start", /start|from|begin|开始|入学/i], ["end", /end|to|graduation|结束|毕业/i],
+    ["start", /start|from|begin|开始|入学|就读时间/i],
+    ["end", /end|to|graduation|结束|毕业|就读时间/i],
     ["description", /description|detail|honors|courses|描述|详情|荣誉|课程/i]
   ];
 
   const EXPERIENCE_PATTERNS = [
     ["company", /company|employer|organization|公司|单位|机构/i],
     ["title", /title|position|role|job title|职位|岗位|角色/i],
-    ["start", /start|from|begin|开始/i], ["end", /end|to|finish|结束/i],
+    ["start", /start|from|begin|开始|起止时间/i],
+    ["end", /end|to|finish|结束|至今|present|current|起止时间/i],
     ["description", /description|responsibilities|achievement|duties|工作内容|职责|描述|业绩/i]
   ];
 
@@ -97,7 +99,9 @@
       diagnostics: {
         ...scanner.summarizeDiagnostics(finalModel),
         ...summarizeDebugRows(debugRows),
-        failed: fillResult.failed
+        failed: fillResult.failed,
+        mainWorldFilled: fillResult.mainWorldFilled,
+        isolatedFilled: fillResult.isolatedFilled
       },
       uncertain: [...rowResult.uncertain, ...fillResult.uncertain].slice(0, 30),
       suggestions: fillResult.suggestions,
@@ -144,7 +148,8 @@
     rows.slice(0, items.length).forEach((row, index) => {
       row.fields.forEach((field) => {
         const match = matchArrayKey(field, patterns, memory);
-        const value = match.key ? items[index][match.key] : "";
+        const rawValue = match.key ? items[index][match.key] : "";
+        const value = adaptArrayValue(field, rawValue, match.key);
         if (!hasValue(value)) return;
         plan.push(buildAction(field, {
           value, source: `${sourceName}.${index}.${match.key}`,
@@ -154,6 +159,19 @@
         }, profile, row.id));
       });
     });
+  }
+
+  function adaptArrayValue(field, value, key) {
+    if (!hasValue(value)) return value;
+    const text = `${field.fieldTextNormalized} ${field.sectionText || ""}`;
+    if (["start", "end"].includes(key)) {
+      if (/至今|present|current/i.test(text) && field.control === "checkbox") {
+        return /至今|present|current/i.test(String(value));
+      }
+      if (/年|year/i.test(text)) return extractYear(value) || value;
+      if (/月|month/i.test(text)) return extractMonth(value) || value;
+    }
+    return value;
   }
 
   function getCandidate(field, profile, memory, fallbackPath = "") {
@@ -227,6 +245,8 @@
     let actions = 0;
     let suggestions = 0;
     let failed = 0;
+    let mainWorldFilled = 0;
+    let isolatedFilled = 0;
     const uncertain = [];
     for (const action of plan) {
       if (action.type === "waitForRender") { await scanner.sleep(action.ms || 220); continue; }
@@ -241,13 +261,26 @@
         actions += 1;
         continue;
       }
-      const ok = await actionsApi.execute(action, element);
+      const result = await actionsApi.execute(action, element);
+      const ok = result === true || result?.ok === true;
       actions += 1;
-      if (ok && action.type !== "click") filled += 1;
-      if (!ok) { failed += 1; uncertain.push({ ...action, label: scanner.getElementText(element), reason: "action-failed" }); }
-      await scanner.sleep(70);
+      if (ok && action.type !== "click") {
+        filled += 1;
+        if (String(result?.method || "").startsWith("main-world")) mainWorldFilled += 1;
+        else isolatedFilled += 1;
+      }
+      if (!ok) {
+        failed += 1;
+        uncertain.push({
+          ...action,
+          label: scanner.getElementText(element),
+          reason: result?.reason || "action-failed",
+          method: result?.method || "none"
+        });
+      }
+      await scanner.sleep(90);
     }
-    return { filled, actions, suggestions, failed, uncertain };
+    return { filled, actions, suggestions, failed, mainWorldFilled, isolatedFilled, uncertain };
   }
 
   function addSuggestion(element, action) {
@@ -341,6 +374,15 @@
 
   function hasValue(value) {
     return value !== null && value !== undefined && (typeof value === "boolean" || String(value).trim() !== "");
+  }
+
+  function extractYear(value) {
+    return String(value ?? "").match(/(?:19|20)\d{2}/)?.[0] || "";
+  }
+
+  function extractMonth(value) {
+    const match = String(value ?? "").match(/(?:19|20)\d{2}[-/.年](\d{1,2})/);
+    return match ? String(Number(match[1])) : "";
   }
 
   function preview(value) {
