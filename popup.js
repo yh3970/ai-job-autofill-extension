@@ -33,7 +33,7 @@ async function init() {
 
 async function fillCurrentPage() {
   setResult("");
-  setStatus("正在自动新增并填写教育、工作和项目经历...");
+  setStatus("正在按字段标签严格匹配并填写...");
   const tab = await getActiveTab();
   const { profile, fieldMemory } = await chrome.storage.local.get(["profile", "fieldMemory"]);
   const response = await sendToBackground({
@@ -50,6 +50,7 @@ async function fillCurrentPage() {
 
   const diagnostics = response.diagnostics || {};
   const coverage = profileCoverageSummary(response.debugRows || []);
+  const safetyBlocks = countSafetyBlocks(response.uncertain || []);
   setStatus(`扫描 ${response.scanned || 0} 个字段，匹配 ${diagnostics.matched || 0} 个，已填充 ${response.filled || 0} 个，建议确认 ${response.suggestions || 0} 个。`);
   const failurePreview = formatFailurePreview(response.uncertain || []);
   const monitorText = response.monitoring?.enabled
@@ -59,7 +60,8 @@ async function fillCurrentPage() {
     `顶层 ${diagnostics.topFrameFields || 0}｜iframe ${diagnostics.iframeFields || 0}｜Shadow DOM ${diagnostics.shadowFields || 0}`,
     `已识别标签 ${diagnostics.labelledFields || 0}｜未识别标签 ${diagnostics.unlabelledFields || 0}`,
     `自动新增 ${diagnostics.repeatRowsAdded || 0} 行：教育 ${diagnostics.educationRowsAdded || 0}｜工作/实习 ${diagnostics.experienceRowsAdded || 0}｜项目 ${diagnostics.projectRowsAdded || 0}`,
-    `跳过 ${diagnostics.skipped || 0}｜敏感字段跳过 ${diagnostics.sensitiveSkipped || 0}｜执行失败 ${diagnostics.failed || 0}`,
+    `跳过 ${diagnostics.skipped || 0}｜歧义教育字段跳过 ${diagnostics.repeatedAmbiguousSkipped || 0}｜严格安全拦截 ${safetyBlocks}`,
+    `敏感字段跳过 ${diagnostics.sensitiveSkipped || 0}｜执行失败 ${diagnostics.failed || 0}`,
     coverage,
     `通用适配补填 ${diagnostics.universalFilled || 0}｜重复经历补填 ${diagnostics.repeatedFallbackFilled || 0}｜项目经历补填 ${diagnostics.projectProfileFilled || 0}｜站点适配补填 ${diagnostics.djiAdapterFilled || 0}`,
     monitorText,
@@ -125,6 +127,11 @@ function profileCoverageSummary(debugRows) {
   return `未找到可用 Profile/记忆值 ${noValue}｜低置信度 ${lowConfidence}｜敏感信息保护 ${sensitive}`;
 }
 
+function countSafetyBlocks(uncertain) {
+  return (Array.isArray(uncertain) ? uncertain : [])
+    .filter((item) => item.reason === "profile-path-field-mismatch").length;
+}
+
 function formatFailurePreview(uncertain) {
   const failures = uncertain
     .filter((item) => item.reason && !String(item.reason).startsWith("missing-add-"))
@@ -152,6 +159,7 @@ function translateReason(reason) {
     "universal-action-failed": "通用适配器填写失败",
     "repeated-target-not-found": "重复经历区块中的字段已被页面替换",
     "repeated-action-failed": "重复经历字段填写失败",
+    "profile-path-field-mismatch": "Profile字段与网页标签不一致，已阻止乱填",
     "repeat-add-button-not-found-education": "未找到新增教育经历按钮",
     "repeat-add-button-not-found-experience": "未找到新增工作/实习经历按钮",
     "repeat-add-button-not-found-projects": "未找到新增项目经历按钮",
