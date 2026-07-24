@@ -45,7 +45,6 @@ async function fillCurrentPage() {
   const failurePreview = formatFailurePreview(response.uncertain || []);
   setResult([
     `顶层 ${diagnostics.topFrameFields || 0}｜iframe ${diagnostics.iframeFields || 0}｜Shadow DOM ${diagnostics.shadowFields || 0}`,
-    `主页面环境填充 ${diagnostics.mainWorldFilled || 0}｜普通环境填充 ${diagnostics.isolatedFilled || 0}`,
     `跳过 ${diagnostics.skipped || 0}｜敏感字段跳过 ${diagnostics.sensitiveSkipped || 0}｜执行失败 ${diagnostics.failed || 0}`,
     frameAccessText(diagnostics),
     failurePreview
