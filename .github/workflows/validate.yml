@@ -1,0 +1,31 @@
+name: Validate extension
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate JavaScript syntax
+        run: |
+          set -euo pipefail
+          for file in \
+            background.js \
+            popup.js \
+            formScanner.js \
+            formActions.js \
+            formAutofillAgent.js \
+            contentScriptV2.js; do
+            node --check "$file"
+          done
+
+      - name: Validate manifest and architecture
+        run: node tests/validate-extension.mjs
