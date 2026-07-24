@@ -65,7 +65,7 @@
   function buildArraySection(fields, sectionType) {
     const grouped = new Map();
     fields.filter((field) => field.section === sectionType).forEach((field) => {
-      const key = field.rowKey || field.id;
+      const key = field.rowKey || `section-${sectionType}`;
       if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key).push(field);
     });
@@ -217,7 +217,7 @@
       "tr", "fieldset", "[data-row]", "[data-index]",
       "[data-testid*='education']", "[data-testid*='experience']",
       "[class*='education'][class*='item']", "[class*='experience'][class*='item']",
-      "[class*='employment'][class*='item']", "[class*='entry']", "[class*='repeat']"
+      "[class*='employment'][class*='item']", "[class*='entry']", "[class*='repeat']", "[class~='row']"
     ].join(","));
     return row ? ensureApplyPilotId(row, "row") : "";
   }
