@@ -14,7 +14,7 @@ const scripts = isolatedEntry?.js || [];
 
 console.log("validate: manifest");
 assert.equal(manifest.manifest_version, 3);
-assert.equal(manifest.version, "0.6.1");
+assert.equal(manifest.version, "0.6.2");
 assert.equal(isolatedEntry?.all_frames, true);
 assert.equal(isolatedEntry?.match_about_blank, true);
 assert.ok(mainEntry?.js?.includes("mainWorldBridge.js"));
@@ -22,10 +22,12 @@ assert.ok(mainEntry?.js?.includes("mainWorldBridge.js"));
 const requiredScripts = [
   "aiSemanticMatcher.js",
   "formScanner.js",
+  "legacySectionAdapter.js",
   "formActions.js",
   "formAutofillAgent.js",
   "siteAdapters.js",
   "universalAdapter.js",
+  "repeatedProfileAdapter.js",
   "phoneValueAdapter.js",
   "learningMonitor.js",
   "contentScriptV2.js"
@@ -34,28 +36,39 @@ for (const script of requiredScripts) {
   assert.ok(scripts.includes(script), `${script} must be loaded`);
   await read(script);
 }
+assert.ok(scripts.indexOf("formScanner.js") < scripts.indexOf("legacySectionAdapter.js"));
+assert.ok(scripts.indexOf("legacySectionAdapter.js") < scripts.indexOf("formAutofillAgent.js"));
 assert.ok(scripts.indexOf("formAutofillAgent.js") < scripts.indexOf("siteAdapters.js"));
 assert.ok(scripts.indexOf("siteAdapters.js") < scripts.indexOf("universalAdapter.js"));
-assert.ok(scripts.indexOf("universalAdapter.js") < scripts.indexOf("phoneValueAdapter.js"));
+assert.ok(scripts.indexOf("universalAdapter.js") < scripts.indexOf("repeatedProfileAdapter.js"));
+assert.ok(scripts.indexOf("repeatedProfileAdapter.js") < scripts.indexOf("phoneValueAdapter.js"));
 assert.ok(scripts.indexOf("phoneValueAdapter.js") < scripts.indexOf("learningMonitor.js"));
 assert.ok(scripts.indexOf("learningMonitor.js") < scripts.indexOf("contentScriptV2.js"));
 
 console.log("validate: universal scanner");
 const scanner = await read("formScanner.js");
+const legacySections = await read("legacySectionAdapter.js");
 assert.ok(scanner.includes("getTableLabelText"));
 assert.ok(scanner.includes("getAdjacentLabelText"));
 assert.ok(scanner.includes("getDisplayFieldValue"));
 assert.ok(scanner.includes("shadowRoot"));
+assert.ok(legacySections.includes("input[readonly]"));
+assert.ok(legacySections.includes("工作经历"));
+assert.ok(legacySections.includes("START_PATTERN"));
 
 console.log("validate: matching and learning");
 const semantic = await read("aiSemanticMatcher.js");
 const universal = await read("universalAdapter.js");
+const repeated = await read("repeatedProfileAdapter.js");
 const phoneAdapter = await read("phoneValueAdapter.js");
 const monitor = await read("learningMonitor.js");
 assert.ok(semantic.includes("canonicalLabel"));
 assert.ok(semantic.includes("personal.birthDate"));
 assert.ok(universal.includes("runUniversalAdapter"));
 assert.ok(universal.includes("groupFields"));
+assert.ok(repeated.includes("企业名称"));
+assert.ok(repeated.includes("工作描述"));
+assert.ok(repeated.includes("repeatedFallbackFilled"));
 assert.ok(phoneAdapter.includes("deriveAreaValue"));
 assert.ok(phoneAdapter.includes("deriveLocalNumber"));
 assert.ok(phoneAdapter.includes("phone-area-already-selected"));
@@ -68,6 +81,7 @@ for (const file of [
   "formAutofillAgent.js",
   "siteAdapters.js",
   "universalAdapter.js",
+  "repeatedProfileAdapter.js",
   "phoneValueAdapter.js",
   "learningMonitor.js",
   "mainWorldBridge.js"
