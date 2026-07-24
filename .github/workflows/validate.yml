@@ -28,6 +28,7 @@ jobs:
             siteAdapters.js \
             universalAdapter.js \
             repeatedProfileAdapter.js \
+            repeatableSectionManager.js \
             phoneValueAdapter.js \
             learningMonitor.js \
             mainWorldBridge.js \
