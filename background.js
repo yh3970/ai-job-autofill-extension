@@ -79,25 +79,9 @@ async function runAcrossFrames(tabId, frameCommand, message) {
     fieldMemory: message.fieldMemory || {}
   };
 
-  const responses = await Promise.all(frames.map(async (frame) => {
-    try {
-      const response = await chrome.tabs.sendMessage(tabId, payload, { frameId: frame.frameId });
-      return {
-        frameId: frame.frameId,
-        parentFrameId: frame.parentFrameId,
-        url: frame.url || "",
-        response
-      };
-    } catch (error) {
-      return {
-        frameId: frame.frameId,
-        parentFrameId: frame.parentFrameId,
-        url: frame.url || "",
-        response: null,
-        error: error?.message || String(error)
-      };
-    }
-  }));
+  const responses = frameCommand === "APPLYPILOT_LEARN_FRAME"
+    ? await runLearnAcrossFrames(tabId, frames, payload)
+    : await Promise.all(frames.map((frame) => sendFrameMessage(tabId, frame, payload)));
 
   const successful = responses.filter((item) => item.response?.ok);
   if (!successful.length) {
@@ -119,6 +103,39 @@ async function runAcrossFrames(tabId, frameCommand, message) {
     return aggregateFill(successful, responses);
   }
   return aggregateLearn(successful, responses);
+}
+
+async function runLearnAcrossFrames(tabId, frames, payload) {
+  const responses = [];
+  let fieldMemory = { ...(payload.fieldMemory || {}) };
+  for (const frame of frames) {
+    const result = await sendFrameMessage(tabId, frame, { ...payload, fieldMemory });
+    responses.push(result);
+    if (result.response?.ok && result.response.fieldMemory) {
+      fieldMemory = result.response.fieldMemory;
+    }
+  }
+  return responses;
+}
+
+async function sendFrameMessage(tabId, frame, payload) {
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, payload, { frameId: frame.frameId });
+    return {
+      frameId: frame.frameId,
+      parentFrameId: frame.parentFrameId,
+      url: frame.url || "",
+      response
+    };
+  } catch (error) {
+    return {
+      frameId: frame.frameId,
+      parentFrameId: frame.parentFrameId,
+      url: frame.url || "",
+      response: null,
+      error: error?.message || String(error)
+    };
+  }
 }
 
 async function getFrames(tabId) {
@@ -214,13 +231,14 @@ function aggregateFill(successful, allFrames) {
   };
 }
 
-function aggregateLearn(successful, allFrames) {
+async function aggregateLearn(successful, allFrames) {
   const fieldMemory = {};
   let learned = 0;
   successful.forEach((item) => {
     learned += number(item.response.learned);
     Object.assign(fieldMemory, item.response.fieldMemory || {});
   });
+  await chrome.storage.local.set({ fieldMemory });
   return {
     ok: true,
     learned,
