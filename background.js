@@ -4,8 +4,12 @@ const FRAME_COMMANDS = {
   APPLYPILOT_TAB_LEARN: "APPLYPILOT_LEARN_FRAME"
 };
 
+const MAX_MEMORY_ENTRIES = 1200;
+const MAX_MONITOR_LOG_ENTRIES = 250;
+let memoryWriteQueue = Promise.resolve();
+
 chrome.runtime.onInstalled.addListener(async () => {
-  const current = await chrome.storage.local.get(["profile", "fieldMemory"]);
+  const current = await chrome.storage.local.get(["profile", "fieldMemory", "memoryStats", "autofillMonitorLog"]);
   const defaultProfile = {
     personal: {
       firstName: "",
@@ -16,9 +20,22 @@ chrome.runtime.onInstalled.addListener(async () => {
       preferredName: "",
       email: "",
       phone: "",
+      gender: "",
+      birthDate: "",
+      ethnicity: "",
+      maritalStatus: "",
+      politicalStatus: "",
+      idType: "",
+      idNumber: "",
       location: "",
+      currentResidence: "",
+      householdLocation: "",
+      nativePlace: "",
       address: "",
       nationality: "",
+      highestDegree: "",
+      latestMajor: "",
+      latestSchool: "",
       linkedin: "",
       github: "",
       portfolio: ""
@@ -39,7 +56,9 @@ chrome.runtime.onInstalled.addListener(async () => {
     resumeText: "",
     resumeFiles: [],
     preferences: {
-      allowSensitiveAutofill: false
+      allowSensitiveAutofill: false,
+      autoLearnCorrections: true,
+      learnSensitiveFields: false
     }
   };
 
@@ -49,12 +68,40 @@ chrome.runtime.onInstalled.addListener(async () => {
     await chrome.storage.local.set({ profile: mergeDefaults(defaultProfile, current.profile) });
   }
 
-  if (!current.fieldMemory) {
-    await chrome.storage.local.set({ fieldMemory: {} });
-  }
+  const initial = {};
+  if (!current.fieldMemory) initial.fieldMemory = {};
+  if (!current.memoryStats) initial.memoryStats = emptyMemoryStats();
+  if (!current.autofillMonitorLog) initial.autofillMonitorLog = [];
+  if (Object.keys(initial).length) await chrome.storage.local.set(initial);
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "APPLYPILOT_MEMORY_UPSERT") {
+    enqueueMemoryMutation(() => handleMemoryUpsert(message)).then(sendResponse).catch((error) => {
+      sendResponse({ ok: false, error: error?.message || String(error) });
+    });
+    return true;
+  }
+
+  if (message?.type === "APPLYPILOT_MONITOR_EVENT") {
+    enqueueMemoryMutation(() => handleMonitorEvent(message.monitorEvent)).then(sendResponse).catch((error) => {
+      sendResponse({ ok: false, error: error?.message || String(error) });
+    });
+    return true;
+  }
+
+  if (message?.type === "APPLYPILOT_GET_MONITOR_STATS") {
+    chrome.storage.local.get(["memoryStats", "autofillMonitorLog", "fieldMemory"]).then((stored) => {
+      sendResponse({
+        ok: true,
+        stats: stored.memoryStats || emptyMemoryStats(),
+        recentEvents: (stored.autofillMonitorLog || []).slice(-20).reverse(),
+        memoryCount: Object.keys(stored.fieldMemory || {}).length
+      });
+    }).catch((error) => sendResponse({ ok: false, error: error?.message || String(error) }));
+    return true;
+  }
+
   const frameCommand = FRAME_COMMANDS[message?.type];
   if (!frameCommand) return false;
 
@@ -66,6 +113,81 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
   return true;
 });
+
+function enqueueMemoryMutation(task) {
+  const run = memoryWriteQueue.then(task, task);
+  memoryWriteQueue = run.catch(() => undefined);
+  return run;
+}
+
+async function handleMemoryUpsert(message) {
+  const entries = message.entries && typeof message.entries === "object" ? message.entries : {};
+  const stored = await chrome.storage.local.get(["fieldMemory", "memoryStats", "autofillMonitorLog"]);
+  const fieldMemory = { ...(stored.fieldMemory || {}) };
+  const now = Date.now();
+
+  for (const [key, entry] of Object.entries(entries)) {
+    if (!key || !entry) continue;
+    const previous = fieldMemory[key] || {};
+    fieldMemory[key] = {
+      ...previous,
+      ...entry,
+      createdAt: previous.createdAt || entry.createdAt || now,
+      updatedAt: entry.updatedAt || now,
+      seenCount: Number(previous.seenCount || 0) + 1
+    };
+  }
+
+  const trimmedMemory = trimMemory(fieldMemory, MAX_MEMORY_ENTRIES);
+  const stats = updateStats(stored.memoryStats || emptyMemoryStats(), message.monitorEvent, Object.keys(entries).length > 0);
+  const log = appendMonitorEvent(stored.autofillMonitorLog || [], message.monitorEvent);
+  await chrome.storage.local.set({ fieldMemory: trimmedMemory, memoryStats: stats, autofillMonitorLog: log });
+  return { ok: true, saved: Object.keys(entries).length, stats, memoryCount: Object.keys(trimmedMemory).length };
+}
+
+async function handleMonitorEvent(event) {
+  const stored = await chrome.storage.local.get(["memoryStats", "autofillMonitorLog"]);
+  const stats = updateStats(stored.memoryStats || emptyMemoryStats(), event, false);
+  const log = appendMonitorEvent(stored.autofillMonitorLog || [], event);
+  await chrome.storage.local.set({ memoryStats: stats, autofillMonitorLog: log });
+  return { ok: true, stats };
+}
+
+function updateStats(current, event, learned) {
+  const stats = { ...emptyMemoryStats(), ...(current || {}) };
+  const type = event?.eventType || "";
+  if (learned) stats.totalLearned += 1;
+  if (type === "corrected-autofill") stats.correctedAutofill += 1;
+  if (type === "recovered-after-failure") stats.recoveredAfterFailure += 1;
+  if (type === "manual-after-autofill") stats.manualAfterAutofill += 1;
+  if (type === "autofill-failure") stats.failuresObserved += 1;
+  if (type || learned) stats.lastUpdatedAt = event?.at || Date.now();
+  return stats;
+}
+
+function appendMonitorEvent(log, event) {
+  if (!event?.eventType) return log.slice(-MAX_MONITOR_LOG_ENTRIES);
+  return [...log, { ...event, at: event.at || Date.now() }].slice(-MAX_MONITOR_LOG_ENTRIES);
+}
+
+function trimMemory(memory, limit) {
+  const entries = Object.entries(memory);
+  if (entries.length <= limit) return memory;
+  return Object.fromEntries(entries
+    .sort(([, left], [, right]) => Number(right?.updatedAt || 0) - Number(left?.updatedAt || 0))
+    .slice(0, limit));
+}
+
+function emptyMemoryStats() {
+  return {
+    totalLearned: 0,
+    correctedAutofill: 0,
+    recoveredAfterFailure: 0,
+    manualAfterAutofill: 0,
+    failuresObserved: 0,
+    lastUpdatedAt: 0
+  };
+}
 
 async function runAcrossFrames(tabId, frameCommand, message) {
   if (!Number.isInteger(tabId)) {
@@ -161,6 +283,8 @@ function aggregateScan(successful, allFrames) {
     summary.scanned += number(response.count);
     summary.domFields += number(response.diagnostics?.domFields);
     summary.shadowFields += number(response.diagnostics?.shadowFields);
+    summary.labelledFields += number(response.diagnostics?.labelledFields);
+    summary.unlabelledFields += number(response.diagnostics?.unlabelledFields);
     if (item.frameId === 0) summary.topFrameFields += number(response.count);
     else summary.iframeFields += number(response.count);
   });
@@ -195,7 +319,11 @@ function aggregateFill(successful, allFrames) {
     summary.failed += number(response.diagnostics?.failed);
     summary.domFields += number(response.diagnostics?.domFields);
     summary.shadowFields += number(response.diagnostics?.shadowFields);
+    summary.labelledFields += number(response.diagnostics?.labelledFields);
+    summary.unlabelledFields += number(response.diagnostics?.unlabelledFields);
     summary.actions += number(response.actions);
+    summary.monitoringFrames += response.monitoring?.enabled ? 1 : 0;
+    summary.pendingFailures += number(response.monitoring?.pendingFailures);
     if (item.frameId === 0) summary.topFrameFields += number(response.scanned);
     else summary.iframeFields += number(response.scanned);
 
@@ -218,6 +346,10 @@ function aggregateFill(successful, allFrames) {
     filled: summary.filled,
     actions: summary.actions,
     suggestions: summary.suggestions,
+    monitoring: {
+      enabled: summary.monitoringFrames > 0,
+      pendingFailures: summary.pendingFailures
+    },
     diagnostics: {
       ...summary,
       accessibleFrames: successful.length,
@@ -225,8 +357,8 @@ function aggregateFill(successful, allFrames) {
       inaccessibleFrames: allFrames.length - successful.length
     },
     planSummary,
-    uncertain: uncertain.slice(0, 40),
-    debugRows: debugRows.slice(0, 160),
+    uncertain: uncertain.slice(0, 50),
+    debugRows: debugRows.slice(0, 180),
     frames: successful.map(frameSummary)
   };
 }
@@ -238,7 +370,7 @@ async function aggregateLearn(successful, allFrames) {
     learned += number(item.response.learned);
     Object.assign(fieldMemory, item.response.fieldMemory || {});
   });
-  await chrome.storage.local.set({ fieldMemory });
+  await chrome.storage.local.set({ fieldMemory: trimMemory(fieldMemory, MAX_MEMORY_ENTRIES) });
   return {
     ok: true,
     learned,
@@ -272,7 +404,11 @@ function emptySummary() {
     topFrameFields: 0,
     iframeFields: 0,
     domFields: 0,
-    shadowFields: 0
+    shadowFields: 0,
+    labelledFields: 0,
+    unlabelledFields: 0,
+    monitoringFrames: 0,
+    pendingFailures: 0
   };
 }
 

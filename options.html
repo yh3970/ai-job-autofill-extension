@@ -11,7 +11,7 @@
       <header class="page-header">
         <div>
           <h1>ApplyPilot Profile</h1>
-          <p>上传中英文简历自动生成 Profile，国内外申请页面都能一键填充。</p>
+          <p>上传中英文简历自动生成 Profile，国内外申请页面都能一键填充，并学习你后续的人工修正。</p>
         </div>
         <button id="saveProfile" class="primary">保存 Profile</button>
       </header>
@@ -60,7 +60,11 @@
           <label>邮箱<input data-path="personal.email" type="email"></label>
           <label>电话<input data-path="personal.phone"></label>
           <label>所在地<input data-path="personal.location"></label>
+          <label>现居住地<input data-path="personal.currentResidence"></label>
           <label>国籍<input data-path="personal.nationality"></label>
+          <label>最高学历<input data-path="personal.highestDegree"></label>
+          <label>最近专业<input data-path="personal.latestMajor"></label>
+          <label>最近学校<input data-path="personal.latestSchool"></label>
           <label class="wide">地址<input data-path="personal.address"></label>
           <label>LinkedIn<input data-path="personal.linkedin"></label>
           <label>GitHub<input data-path="personal.github"></label>
@@ -69,16 +73,34 @@
       </section>
 
       <section class="panel">
-        <h2>求职信息</h2>
+        <h2>国内网申常用信息</h2>
+        <p class="hint">以下内容可能属于敏感个人信息。默认不会自动填写或自动学习，只有开启对应开关后才会使用。</p>
+        <div class="grid">
+          <label>性别<input data-path="personal.gender" placeholder="例如：女"></label>
+          <label>出生日期<input data-path="personal.birthDate" placeholder="例如：2001-08-15"></label>
+          <label>民族<input data-path="personal.ethnicity"></label>
+          <label>婚姻状况<input data-path="personal.maritalStatus"></label>
+          <label>政治面貌<input data-path="personal.politicalStatus"></label>
+          <label>证件类型<input data-path="personal.idType"></label>
+          <label>证件号码<input data-path="personal.idNumber"></label>
+          <label>户籍所在地<input data-path="personal.householdLocation"></label>
+          <label>籍贯<input data-path="personal.nativePlace"></label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>求职信息与自动学习</h2>
         <div class="grid">
           <label class="wide">个人简介<textarea data-path="summary" rows="4"></textarea></label>
           <label>工作许可/签证<input data-path="workAuthorization"></label>
           <label>是否需要签证担保<input data-path="visaSponsorship"></label>
           <label>是否接受搬迁<input data-path="relocation"></label>
-          <label class="wide checkbox-label"><input id="allowSensitiveAutofill" type="checkbox"> Allow automatic filling of sensitive EEO fields</label>
           <label>期望薪资<input data-path="desiredSalary"></label>
           <label>到岗时间<input data-path="noticePeriod"></label>
           <label>可入职日期<input data-path="availabilityDate"></label>
+          <label class="wide checkbox-label"><input id="autoLearnCorrections" type="checkbox"> 自动监测填写失败、手动补填和修改后的字段，并保存到记忆库</label>
+          <label class="wide checkbox-label"><input id="allowSensitiveAutofill" type="checkbox"> 允许自动填写性别、出生日期、证件信息等敏感字段</label>
+          <label class="wide checkbox-label"><input id="learnSensitiveFields" type="checkbox"> 允许自动学习敏感字段的人工修改</label>
           <label class="wide">技能，使用逗号分隔<textarea id="skills" rows="3"></textarea></label>
           <label class="wide">语言能力，使用逗号分隔<textarea id="languages" rows="2"></textarea></label>
           <label class="wide">证书，使用逗号分隔<textarea id="certifications" rows="2"></textarea></label>
@@ -117,7 +139,7 @@
 
       <section class="panel">
         <h2>记忆库</h2>
-        <p class="hint">当你在页面手动填写字段并点击“记住当前填写内容”后，映射会保存在这里。</p>
+        <p class="hint">点击智能填充后，插件会监测未成功字段以及你随后人工修改的答案。相同或语义相近的问题会在其他网申网站优先复用这些记忆。</p>
         <div class="actions-row">
           <button id="clearMemory">清空记忆库</button>
           <span id="memoryCount"></span>
@@ -130,5 +152,6 @@
     <script src="resumeParser.js"></script>
     <script src="aiResumeParser.js"></script>
     <script src="options.js"></script>
+    <script src="optionsEnhancements.js"></script>
   </body>
 </html>

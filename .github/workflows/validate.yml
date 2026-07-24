@@ -20,10 +20,13 @@ jobs:
           for file in \
             background.js \
             popup.js \
+            optionsEnhancements.js \
             formScanner.js \
             formActions.js \
             formAutofillAgent.js \
             siteAdapters.js \
+            universalAdapter.js \
+            learningMonitor.js \
             mainWorldBridge.js \
             contentScriptV2.js; do
             node --check "$file"
