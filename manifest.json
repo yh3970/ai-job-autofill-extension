@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ApplyPilot",
   "description": "Job application autofill with local semantic matching, memory review, and action planning.",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "permissions": ["activeTab", "storage", "scripting", "webNavigation"],
   "host_permissions": ["<all_urls>"],
   "action": {
@@ -29,6 +29,7 @@
         "formScanner.js",
         "formActions.js",
         "formAutofillAgent.js",
+        "siteAdapters.js",
         "contentScriptV2.js"
       ],
       "run_at": "document_idle",
