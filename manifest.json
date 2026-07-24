@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ApplyPilot",
   "description": "Job application autofill with local semantic matching, memory review, and action planning.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "permissions": ["activeTab", "storage", "scripting", "webNavigation"],
   "host_permissions": ["<all_urls>"],
   "action": {
@@ -16,6 +16,14 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
+      "js": ["mainWorldBridge.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": ["<all_urls>"],
       "js": [
         "aiSemanticMatcher.js",
         "formScanner.js",
@@ -25,7 +33,8 @@
       ],
       "run_at": "document_idle",
       "all_frames": true,
-      "match_about_blank": true
+      "match_about_blank": true,
+      "world": "ISOLATED"
     }
   ]
 }
