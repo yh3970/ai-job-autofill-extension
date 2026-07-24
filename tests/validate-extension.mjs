@@ -14,7 +14,7 @@ const scripts = isolatedEntry?.js || [];
 
 console.log("validate: manifest");
 assert.equal(manifest.manifest_version, 3);
-assert.equal(manifest.version, "0.6.3");
+assert.equal(manifest.version, "0.6.4");
 assert.equal(isolatedEntry?.all_frames, true);
 assert.equal(isolatedEntry?.match_about_blank, true);
 assert.ok(mainEntry?.js?.includes("mainWorldBridge.js"));
@@ -30,6 +30,7 @@ const requiredScripts = [
   "repeatedProfileAdapter.js",
   "repeatableSectionManager.js",
   "phoneValueAdapter.js",
+  "fieldSafetyGuard.js",
   "learningMonitor.js",
   "contentScriptV2.js"
 ];
@@ -44,7 +45,8 @@ assert.ok(scripts.indexOf("siteAdapters.js") < scripts.indexOf("universalAdapter
 assert.ok(scripts.indexOf("universalAdapter.js") < scripts.indexOf("repeatedProfileAdapter.js"));
 assert.ok(scripts.indexOf("repeatedProfileAdapter.js") < scripts.indexOf("repeatableSectionManager.js"));
 assert.ok(scripts.indexOf("repeatableSectionManager.js") < scripts.indexOf("phoneValueAdapter.js"));
-assert.ok(scripts.indexOf("phoneValueAdapter.js") < scripts.indexOf("learningMonitor.js"));
+assert.ok(scripts.indexOf("phoneValueAdapter.js") < scripts.indexOf("fieldSafetyGuard.js"));
+assert.ok(scripts.indexOf("fieldSafetyGuard.js") < scripts.indexOf("learningMonitor.js"));
 assert.ok(scripts.indexOf("learningMonitor.js") < scripts.indexOf("contentScriptV2.js"));
 
 console.log("validate: universal scanner");
@@ -58,28 +60,34 @@ assert.ok(legacySections.includes("input[readonly]"));
 assert.ok(legacySections.includes("工作经历"));
 assert.ok(legacySections.includes("START_PATTERN"));
 
-console.log("validate: matching, repeatable rows and learning");
+console.log("validate: strict matching, repeatable rows and learning");
 const semantic = await read("aiSemanticMatcher.js");
 const universal = await read("universalAdapter.js");
 const repeated = await read("repeatedProfileAdapter.js");
 const repeatableManager = await read("repeatableSectionManager.js");
 const phoneAdapter = await read("phoneValueAdapter.js");
+const safetyGuard = await read("fieldSafetyGuard.js");
 const monitor = await read("learningMonitor.js");
-assert.ok(semantic.includes("canonicalLabel"));
-assert.ok(semantic.includes("personal.birthDate"));
+assert.ok(semantic.includes("const MEMORY_THRESHOLD = 0.85"));
+assert.ok(semantic.includes("const ONTOLOGY_THRESHOLD = 0.65"));
+assert.ok(semantic.includes("semantic-exact"));
+assert.match(semantic, /function buildFieldText\(field\)\s*\{\s*return normalize\(field\?\.fieldTextNormalized \|\| field\?\.text \|\| ""\);/s);
+assert.ok(!semantic.match(/function buildFieldText[\s\S]{0,180}sectionText/));
 assert.ok(universal.includes("runUniversalAdapter"));
 assert.ok(universal.includes("groupFields"));
-assert.ok(repeated.includes("企业名称"));
-assert.ok(repeated.includes("工作描述"));
-assert.ok(repeated.includes("repeatedFallbackFilled"));
+assert.ok(repeated.includes("AMBIGUOUS_EDUCATION_LABELS"));
+assert.ok(repeated.includes("领域方向"));
+assert.ok(repeated.includes("导师"));
+assert.ok(repeated.includes("ownFieldLabel"));
+assert.ok(!repeated.match(/function ownFieldLabel[\s\S]{0,300}sectionText/));
 assert.ok(repeatableManager.includes("ensureRepeatableRows"));
 assert.ok(repeatableManager.includes("增加更多"));
 assert.ok(repeatableManager.includes("projectRowsAdded"));
-assert.ok(repeatableManager.includes("项目名称"));
-assert.ok(repeatableManager.includes("项目描述"));
 assert.ok(phoneAdapter.includes("deriveAreaValue"));
 assert.ok(phoneAdapter.includes("deriveLocalNumber"));
-assert.ok(phoneAdapter.includes("phone-area-already-selected"));
+assert.ok(safetyGuard.includes("profile-path-field-mismatch"));
+assert.ok(safetyGuard.includes("field-safety-guard"));
+assert.ok(safetyGuard.includes("教育"));
 assert.ok(monitor.includes("corrected-autofill"));
 assert.ok(monitor.includes("recovered-after-failure"));
 assert.ok(monitor.includes("event.isTrusted"));
@@ -92,6 +100,7 @@ for (const file of [
   "repeatedProfileAdapter.js",
   "repeatableSectionManager.js",
   "phoneValueAdapter.js",
+  "fieldSafetyGuard.js",
   "learningMonitor.js",
   "mainWorldBridge.js"
 ]) {
@@ -111,4 +120,4 @@ assert.ok(optionsHtml.includes("autoLearnCorrections"));
 assert.ok(optionsHtml.includes("learnSensitiveFields"));
 await read("optionsEnhancements.js");
 
-console.log("ApplyPilot universal learning validation passed.");
+console.log("ApplyPilot strict field identity validation passed.");

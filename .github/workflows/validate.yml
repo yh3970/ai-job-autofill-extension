@@ -30,6 +30,7 @@ jobs:
             repeatedProfileAdapter.js \
             repeatableSectionManager.js \
             phoneValueAdapter.js \
+            fieldSafetyGuard.js \
             learningMonitor.js \
             mainWorldBridge.js \
             contentScriptV2.js; do

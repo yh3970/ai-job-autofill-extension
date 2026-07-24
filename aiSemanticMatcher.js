@@ -1,6 +1,6 @@
 (function () {
-  const MEMORY_THRESHOLD = 0.55;
-  const ONTOLOGY_THRESHOLD = 0.55;
+  const MEMORY_THRESHOLD = 0.85;
+  const ONTOLOGY_THRESHOLD = 0.65;
 
   const STOP_WORDS = new Set([
     "the", "a", "an", "of", "to", "for", "in", "on", "and", "or", "your", "you", "please", "enter",
@@ -49,19 +49,19 @@
 
   const ARRAY_CONCEPTS = {
     education: [
-      concept("school", ["school", "university", "college", "institution", "academy", "学校", "院校", "大学", "毕业院校"]),
+      concept("school", ["school", "university", "college name", "institution", "academy", "学校", "院校", "大学", "毕业院校"]),
       concept("degree", ["degree", "qualification", "level of education", "diploma", "学位", "学历"]),
-      concept("major", ["major", "field of study", "discipline", "program", "专业", "研究方向"]),
+      concept("major", ["major", "field of study", "discipline", "program", "专业", "所学专业"]),
       concept("start", ["start date", "from", "begin", "enrolled", "开始时间", "入学", "就读开始"]),
       concept("end", ["end date", "to", "graduation", "graduated", "结束时间", "毕业时间"]),
       concept("description", ["description", "details", "honors", "courses", "描述", "详情", "荣誉"])
     ],
     experience: [
-      concept("company", ["company", "employer", "organization", "workplace", "公司", "单位", "机构"]),
-      concept("title", ["title", "position", "role", "job title", "职位", "岗位", "职务", "角色"]),
+      concept("company", ["company", "company name", "employer", "organization", "workplace", "enterprise", "企业名称", "公司名称", "公司", "单位", "机构"]),
+      concept("title", ["title", "position", "role", "job title", "职位名称", "职位", "岗位", "职务", "角色"]),
       concept("start", ["start date", "from", "begin", "开始时间", "任职开始", "实习开始"]),
       concept("end", ["end date", "to", "finish", "结束时间", "任职结束", "实习结束"]),
-      concept("description", ["responsibilities", "description", "achievement", "duties", "工作内容", "实习内容", "职责", "业绩", "描述"])
+      concept("description", ["responsibilities", "description", "achievement", "duties", "工作描述", "工作内容", "实习内容", "职责", "业绩", "描述"])
     ]
   };
 
@@ -134,6 +134,10 @@
   }
 
   function bestConcept(text, concepts, threshold) {
+    const canonicalQuery = canonicalize(text);
+    const exact = concepts.find((item) => item.canonicalPhrases.includes(canonicalQuery));
+    if (exact) return { key: exact.key, source: "semantic-exact", score: 0.99, confidence: 0.99 };
+
     const query = vectorize(text);
     let best = null;
     for (const item of concepts) {
@@ -146,11 +150,16 @@
   }
 
   function concept(key, phrases) {
-    return { key, phrases, vector: vectorize(phrases.join(" ")) };
+    return {
+      key,
+      phrases,
+      canonicalPhrases: phrases.map(canonicalize),
+      vector: vectorize(phrases.join(" "))
+    };
   }
 
   function buildFieldText(field) {
-    return normalize([field?.text, field?.fieldTextNormalized, field?.sectionText, field?.section].filter(Boolean).join(" "));
+    return normalize(field?.fieldTextNormalized || field?.text || "");
   }
 
   function vectorize(text) {
