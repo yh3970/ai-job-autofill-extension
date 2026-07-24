@@ -16,9 +16,11 @@
 
   const SECTION_PATTERNS = {
     education: [/education|academic|school|university|college/i, /教育|学历|学校|院校|大学/],
-    internship: [/internship|intern|experience|employment|work history|career/i, /实习|工作经历|工作|职业|经历/],
+    internship: [/internship|intern|experience|employment|work history|career/i, /实习|工作经历|工作经验|任职经历|职业经历/],
     longText: [/cover letter|summary|statement|motivation|why|introduction|description/i, /求职信|自我介绍|个人简介|动机|为什么|描述/]
   };
+
+  const HEADING_SELECTOR = "legend,h1,h2,h3,h4,h5,h6,[role='heading'],.section-title,.card-title,.panel-title,.title,[class*='title']";
 
   function understandPage() {
     const fields = getInteractiveFields().map((element, index) => describeField(element, index));
@@ -63,14 +65,42 @@
   }
 
   function buildArraySection(fields, sectionType) {
-    const grouped = new Map();
-    fields.filter((field) => field.section === sectionType).forEach((field) => {
-      const key = field.rowKey || `section-${sectionType}`;
-      if (!grouped.has(key)) grouped.set(key, []);
-      grouped.get(key).push(field);
+    const sectionFields = fields.filter((field) => field.section === sectionType);
+    if (!sectionFields.length) return { fields: [], rows: [] };
+
+    const repeatGroups = new Map();
+    sectionFields.forEach((field) => {
+      if (!field.rowKey || !field.rowKey.startsWith("repeat-")) return;
+      if (!repeatGroups.has(field.rowKey)) repeatGroups.set(field.rowKey, []);
+      repeatGroups.get(field.rowKey).push(field);
     });
-    const rows = Array.from(grouped.entries()).map(([id, rowFields]) => ({ id, fields: rowFields }));
-    return { fields: fields.filter((field) => field.section === sectionType), rows };
+
+    if (repeatGroups.size) {
+      return {
+        fields: sectionFields,
+        rows: Array.from(repeatGroups.entries()).map(([id, rowFields]) => ({ id, fields: rowFields }))
+      };
+    }
+
+    return { fields: sectionFields, rows: inferSequentialRows(sectionFields, sectionType) };
+  }
+
+  function inferSequentialRows(fields, sectionType) {
+    const anchor = sectionType === "education"
+      ? /school|university|college|institution|学校|院校|大学/i
+      : /company|employer|organization|单位|公司|雇主|机构/i;
+    const rows = [];
+    let current = [];
+
+    fields.forEach((field) => {
+      if (anchor.test(field.fieldTextNormalized) && current.length) {
+        rows.push({ id: `sequence-${sectionType}-${rows.length}`, fields: current });
+        current = [];
+      }
+      current.push(field);
+    });
+    if (current.length) rows.push({ id: `sequence-${sectionType}-${rows.length}`, fields: current });
+    return rows;
   }
 
   function findAddButtons() {
@@ -155,41 +185,131 @@
     return uniqueText([
       getLabelText(element),
       getAriaLabelledByText(element),
+      getAriaDescribedByText(element),
+      getTableLabelText(element),
+      getDefinitionLabelText(element),
+      getAdjacentLabelText(element),
+      getLocalQuestionText(element),
+      element.getAttribute("data-label"),
+      element.getAttribute("data-title"),
       element.getAttribute("aria-label"),
       element.getAttribute("placeholder"),
-      element.getAttribute("name"),
+      humanizeIdentifier(element.getAttribute("name")),
+      humanizeIdentifier(element.id),
       element.getAttribute("autocomplete"),
-      element.getAttribute("title"),
-      getLocalQuestionText(element)
-    ]).join(" ").slice(0, 500);
+      element.getAttribute("title")
+    ]).join(" ").slice(0, 700);
   }
 
   function getLocalQuestionText(element) {
-    const container = element.closest("[data-question], .question, .field, .form-group, .ant-form-item, .el-form-item");
+    const container = element.closest([
+      "[data-question]", ".question", ".field", ".form-group", ".form-item", ".control-group",
+      ".ant-form-item", ".el-form-item", ".layui-form-item", ".ui-form-item", ".resume-form-item",
+      "[class*='formItem']", "[class*='form-item']", "[class*='field-item']"
+    ].join(","));
     if (!container) return "";
-    const label = container.querySelector("label, .ant-form-item-label, .el-form-item__label, .form-label, [class*='label']");
-    return label ? label.textContent || "" : "";
+    const label = container.querySelector([
+      "label", ".ant-form-item-label", ".el-form-item__label", ".layui-form-label", ".control-label",
+      ".form-label", "[class*='label']", "[class*='Label']"
+    ].join(","));
+    return cleanLabelText(label?.textContent || "");
+  }
+
+  function getTableLabelText(element) {
+    const cell = element.closest("td, th");
+    if (!cell) return "";
+    const texts = [];
+    let sibling = cell.previousElementSibling;
+    let inspected = 0;
+    while (sibling && inspected < 2) {
+      if (!sibling.querySelector(FIELD_SELECTOR)) {
+        const text = cleanLabelText(sibling.textContent || "");
+        if (text && text.length <= 80) texts.unshift(text);
+      }
+      sibling = sibling.previousElementSibling;
+      inspected += 1;
+    }
+    if (texts.length) return texts.join(" ");
+
+    const row = cell.closest("tr");
+    if (!row) return "";
+    const cells = Array.from(row.children || []);
+    const index = cells.indexOf(cell);
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+      const candidate = cells[cursor];
+      if (candidate.querySelector(FIELD_SELECTOR)) continue;
+      const text = cleanLabelText(candidate.textContent || "");
+      if (text && text.length <= 80) return text;
+    }
+    return "";
+  }
+
+  function getDefinitionLabelText(element) {
+    const dd = element.closest("dd");
+    if (dd?.previousElementSibling?.matches("dt")) return cleanLabelText(dd.previousElementSibling.textContent || "");
+    return "";
+  }
+
+  function getAdjacentLabelText(element) {
+    const candidates = [];
+    const parent = element.parentElement;
+    if (element.previousElementSibling) candidates.push(element.previousElementSibling);
+    if (parent?.previousElementSibling) candidates.push(parent.previousElementSibling);
+    if (parent) {
+      Array.from(parent.children || []).forEach((child) => {
+        if (child === element || child.contains(element)) return;
+        if (child.matches?.("label,.label,.field-name,.item-name,[class*='label'],[class*='name']")) candidates.push(child);
+      });
+    }
+    return candidates.map((candidate) => cleanLabelText(candidate.textContent || ""))
+      .find((text) => text && text.length <= 80 && !/请选择|请输入|select|choose/i.test(text)) || "";
   }
 
   function getSectionText(element) {
     let current = element.parentElement;
     let depth = 0;
-    while (current && depth < 7) {
-      if (current.matches("fieldset, section, article, form, [class*='section'], [class*='card'], [class*='panel']")) {
+    while (current && depth < 8) {
+      if (current.matches("fieldset, section, article, form, [class*='section'], [class*='card'], [class*='panel'], [class*='resume']")) {
         const heading = findContainerHeading(current);
         if (heading) return heading;
       }
       current = current.parentElement;
       depth += 1;
     }
-    return "";
+    return findPreviousHeading(element);
   }
 
   function findContainerHeading(container) {
     for (const child of Array.from(container.children || [])) {
-      if (child.matches?.("legend,h1,h2,h3,h4,[role='heading'],.section-title,.card-title")) return child.textContent || "";
-      const nested = child.querySelector?.(":scope > legend, :scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > [role='heading']");
-      if (nested) return nested.textContent || "";
+      if (child.matches?.(HEADING_SELECTOR)) {
+        const text = cleanLabelText(child.textContent || "");
+        if (text && text.length <= 100) return text;
+      }
+      const nested = child.querySelector?.(`:scope > ${HEADING_SELECTOR}`);
+      if (nested) {
+        const text = cleanLabelText(nested.textContent || "");
+        if (text && text.length <= 100) return text;
+      }
+    }
+    return "";
+  }
+
+  function findPreviousHeading(element) {
+    let node = element;
+    for (let depth = 0; node && depth < 8; depth += 1, node = node.parentElement) {
+      let previous = node.previousElementSibling;
+      let inspected = 0;
+      while (previous && inspected < 8) {
+        const heading = previous.matches?.(HEADING_SELECTOR) ? previous : previous.querySelector?.(HEADING_SELECTOR);
+        if (heading) {
+          const text = cleanLabelText(heading.textContent || "");
+          if (text && text.length <= 100) return text;
+        }
+        const direct = cleanLabelText(previous.textContent || "");
+        if (direct && direct.length <= 40 && /信息|经历|意向|关系|附件|education|experience|profile/i.test(direct)) return direct;
+        previous = previous.previousElementSibling;
+        inspected += 1;
+      }
     }
     return "";
   }
@@ -199,27 +319,53 @@
     if (element.id) {
       const selector = `label[for="${cssEscape(element.id)}"]`;
       const label = root.querySelector?.(selector) || document.querySelector(selector);
-      if (label) return label.textContent || "";
+      if (label) return cleanLabelText(label.textContent || "");
     }
     const wrappingLabel = element.closest("label");
-    if (wrappingLabel) return wrappingLabel.textContent || "";
-    return element.parentElement?.querySelector?.(":scope > label")?.textContent || "";
+    if (wrappingLabel) return cleanLabelText(wrappingLabel.textContent || "");
+    return cleanLabelText(element.parentElement?.querySelector?.(":scope > label")?.textContent || "");
   }
 
   function getAriaLabelledByText(element) {
-    const ids = String(element.getAttribute("aria-labelledby") || "").split(/\s+/).filter(Boolean);
+    return getReferencedText(element, "aria-labelledby");
+  }
+
+  function getAriaDescribedByText(element) {
+    return getReferencedText(element, "aria-describedby");
+  }
+
+  function getReferencedText(element, attribute) {
+    const ids = String(element.getAttribute(attribute) || "").split(/\s+/).filter(Boolean);
     const root = element.getRootNode();
-    return ids.map((id) => root.getElementById?.(id)?.textContent || document.getElementById(id)?.textContent || "").filter(Boolean).join(" ");
+    return ids.map((id) => root.getElementById?.(id)?.textContent || document.getElementById(id)?.textContent || "")
+      .map(cleanLabelText).filter(Boolean).join(" ");
   }
 
   function getRowKey(element) {
-    const row = element.closest([
-      "tr", "fieldset", "[data-row]", "[data-index]",
+    const repeat = findRepeatContainer(element);
+    if (repeat) return `repeat-${ensureApplyPilotId(repeat, "row")}`;
+    const row = element.closest("tr, [data-row]");
+    return row ? `table-${ensureApplyPilotId(row, "row")}` : "";
+  }
+
+  function findRepeatContainer(element) {
+    const selector = [
+      "[data-repeat-index]", "[data-index]", "[data-row-index]",
       "[data-testid*='education']", "[data-testid*='experience']",
       "[class*='education'][class*='item']", "[class*='experience'][class*='item']",
-      "[class*='employment'][class*='item']", "[class*='entry']", "[class*='repeat']", "[class~='row']"
-    ].join(","));
-    return row ? ensureApplyPilotId(row, "row") : "";
+      "[class*='employment'][class*='item']", "[class*='work'][class*='item']",
+      "[class*='resume'][class*='item']", "[class*='entry']", "[class*='repeat']"
+    ].join(",");
+    const direct = element.closest(selector);
+    if (direct) return direct;
+
+    let current = element.parentElement;
+    for (let depth = 0; current && depth < 7; depth += 1, current = current.parentElement) {
+      const heading = current.querySelector?.(HEADING_SELECTOR);
+      const text = cleanLabelText(heading?.textContent || "");
+      if (/教育经历\s*[（(]?\d+|工作经历\s*[（(]?\d+|实习经历\s*[（(]?\d+|education\s*\d+|experience\s*\d+/i.test(text)) return current;
+    }
+    return null;
   }
 
   function getControlType(element) {
@@ -235,7 +381,7 @@
 
   function getFieldKind(element, text) {
     const type = getFieldType(element);
-    if (["date", "month", "datetime-local"].includes(type) || /date|日期|时间|start|end/i.test(text)) return "date";
+    if (["date", "month", "datetime-local"].includes(type) || /date|日期|时间|出生|start|end/i.test(text)) return "date";
     return type || "text";
   }
 
@@ -245,10 +391,10 @@
 
   function getFieldOptions(element) {
     if (element.tagName.toLowerCase() === "select") {
-      return Array.from(element.options).map((option) => normalizeText(option.textContent || option.value)).filter(Boolean).slice(0, 50);
+      return Array.from(element.options).map((option) => normalizeText(option.textContent || option.value)).filter(Boolean).slice(0, 80);
     }
     if (getControlType(element) === "radio") {
-      return getRadioGroup(element).map((item) => normalizeText(`${item.value || ""} ${getLabelText(item)}`)).filter(Boolean).slice(0, 30);
+      return getRadioGroup(element).map((item) => normalizeText(`${item.value || ""} ${getLabelText(item)}`)).filter(Boolean).slice(0, 40);
     }
     return [];
   }
@@ -273,7 +419,24 @@
   function getCurrentFieldValue(element) {
     if (element.isContentEditable) return String(element.textContent || "").trim();
     if (["checkbox", "radio"].includes(getControlType(element))) return getCheckedState(element) ? String(element.value || "true") : "";
+    if (element.tagName.toLowerCase() === "select") {
+      return String(element.selectedOptions?.[0]?.textContent || element.value || "").trim();
+    }
     return String(element.value || element.textContent || "").trim();
+  }
+
+  function getDisplayFieldValue(element) {
+    const direct = getCurrentFieldValue(element);
+    if (direct && !isPlaceholderValue(direct)) return direct;
+    const container = element.closest("[role='combobox'], [class*='select'], [class*='picker'], .form-item, .ant-form-item, .el-form-item") || element.parentElement;
+    if (!container) return direct;
+    const selected = container.querySelector("[class*='selected'], [class*='selection-item'], [class*='selector'], [title]");
+    const text = cleanLabelText(selected?.getAttribute?.("title") || selected?.textContent || "");
+    return isPlaceholderValue(text) ? "" : text;
+  }
+
+  function isPlaceholderValue(value) {
+    return /^(请选择|--请选择--|请输入|年|月|please select|select|choose)$/i.test(normalizeText(value));
   }
 
   function getCheckedState(element) {
@@ -286,7 +449,7 @@
   }
 
   function getLabelMemoryKey(element) {
-    return `label_${hashText(normalizeText(getElementText(element)).replace(/[^\p{L}\p{N}]+/gu, " "))}`;
+    return `label_${hashText(canonicalizeLabel(getElementText(element)))}`;
   }
 
   function ensureApplyPilotId(element, prefix) {
@@ -307,17 +470,52 @@
 
   function summarizeDiagnostics(model) {
     const shadowFields = model.fields.filter((field) => field.rootType === "shadow").length;
-    return { domFields: model.fields.length - shadowFields, shadowFields, isTopFrame: window.top === window, frameUrl: location.href };
+    const labelledFields = model.fields.filter((field) => canonicalizeLabel(field.text).length >= 2).length;
+    return {
+      domFields: model.fields.length - shadowFields,
+      shadowFields,
+      labelledFields,
+      unlabelledFields: model.fields.length - labelledFields,
+      isTopFrame: window.top === window,
+      frameUrl: location.href
+    };
   }
 
   function uniqueText(values) {
     const seen = new Set();
-    return values.map((value) => String(value || "").replace(/\s+/g, " ").trim()).filter((value) => {
+    return values.map((value) => cleanLabelText(value)).filter((value) => {
       const key = normalizeText(value);
       if (!key || seen.has(key)) return false;
       seen.add(key);
       return true;
     });
+  }
+
+  function cleanLabelText(value) {
+    return String(value || "")
+      .replace(/[＊*]+/g, " ")
+      .replace(/\s+/g, " ")
+      .replace(/^[:：\-—\s]+|[:：\-—\s]+$/g, "")
+      .trim();
+  }
+
+  function humanizeIdentifier(value) {
+    const text = String(value || "").trim();
+    if (!text || /^\d+$/.test(text) || text.length > 90) return "";
+    return text
+      .replace(/[_.\-\[\]]+/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/\d+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function canonicalizeLabel(value) {
+    return normalizeText(value)
+      .replace(/请输入|请选择|please|enter|select|choose|必填|required/g, " ")
+      .replace(/[^a-z0-9\u4e00-\u9fff]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   function isVisible(element) {
@@ -333,8 +531,9 @@
 
   function hashText(value) {
     let hash = 0;
-    for (let i = 0; i < value.length; i += 1) {
-      hash = (hash << 5) - hash + value.charCodeAt(i);
+    const text = String(value || "");
+    for (let i = 0; i < text.length; i += 1) {
+      hash = (hash << 5) - hash + text.charCodeAt(i);
       hash |= 0;
     }
     return `f_${Math.abs(hash)}`;
@@ -351,6 +550,7 @@
 
   window.ApplyPilotFormScanner = {
     AP_ID,
+    FIELD_SELECTOR,
     understandPage,
     getInteractiveFields,
     describeField,
@@ -362,13 +562,18 @@
     getLabelText,
     getControlType,
     getCurrentFieldValue,
+    getDisplayFieldValue,
     getCheckedState,
     getClickableProxy,
     getRadioGroup,
     getFieldSignature,
     getLabelMemoryKey,
+    ensureApplyPilotId,
     summarizeSections,
     summarizeDiagnostics,
+    canonicalizeLabel,
+    hashText,
+    isVisible,
     normalizeText,
     cssEscape,
     sleep
