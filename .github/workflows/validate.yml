@@ -23,6 +23,7 @@ jobs:
             formScanner.js \
             formActions.js \
             formAutofillAgent.js \
+            siteAdapters.js \
             mainWorldBridge.js \
             contentScriptV2.js; do
             node --check "$file"
