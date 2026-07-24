@@ -12,52 +12,61 @@ async function init() {
   learnButton.addEventListener("click", learnCurrentPage);
 
   const tab = await getActiveTab();
-  const response = await sendToTab(tab.id, { type: "APPLYPILOT_SCAN" });
+  const response = await sendToBackground({ type: "APPLYPILOT_TAB_SCAN", tabId: tab?.id });
   if (!response?.ok) {
-    setStatus("这个页面暂时无法扫描。刷新页面后再试一次。");
+    setStatus(scanFailureMessage(response));
     return;
   }
-  const sections = response.sections;
-  if (sections) {
-    setStatus(`Agent 已理解页面：基础字段 ${sections.basicFields}，教育 ${sections.educationRows} 行，经历 ${sections.internshipRows} 行，长文本 ${sections.longTextFields} 个。`);
-  } else {
-    setStatus(`发现 ${response.count} 个可填写字段。`);
-  }
+
+  const diagnostics = response.diagnostics || {};
+  setStatus(`发现 ${response.count || 0} 个可填写字段：顶层 ${diagnostics.topFrameFields || 0}，iframe ${diagnostics.iframeFields || 0}，Shadow DOM ${diagnostics.shadowFields || 0}。`);
+  setResult(frameAccessText(diagnostics));
 }
 
 async function fillCurrentPage() {
   setResult("");
-  setStatus("Agent 正在理解页面并规划动作队列...");
+  setStatus("正在等待表单稳定并扫描所有可访问框架...");
   const tab = await getActiveTab();
   const { profile, fieldMemory } = await chrome.storage.local.get(["profile", "fieldMemory"]);
-  const response = await sendToTab(tab.id, { type: "APPLYPILOT_FILL", profile, fieldMemory });
+  const response = await sendToBackground({
+    type: "APPLYPILOT_TAB_FILL",
+    tabId: tab?.id,
+    profile,
+    fieldMemory
+  });
+
   if (!response?.ok) {
-    setStatus("填充失败。请确认页面已经加载完成。");
+    setStatus(scanFailureMessage(response, "填充失败"));
     return;
   }
-  setStatus(`Agent 已执行 ${response.actions || 0} 个动作，填充 ${response.filled} 个字段，建议确认 ${response.suggestions || 0} 个。`);
-  if (response.sections || response.planSummary) {
-    const sections = response.sections || {};
-    const plan = response.planSummary || {};
-    setResult(`页面结构：教育 ${sections.educationRows || 0} 行，经历 ${sections.internshipRows || 0} 行。动作计划：新增/点击 ${plan.click || 0} 次，输入 ${plan.inputText || 0} 次，建议 ${plan.suggest || 0} 次，跳过 ${plan.debugOnly || 0} 次。Debug rows: ${response.debugRows?.length || 0}。`);
-  }
-  if (response.uncertain?.length) {
-    setResult(`${resultEl.textContent} 还有 ${response.uncertain.length} 个动作不确定，可手动补充后点“记住当前填写内容”。`);
-  }
+
+  const diagnostics = response.diagnostics || {};
+  setStatus(`扫描 ${response.scanned || 0} 个字段，匹配 ${diagnostics.matched || 0} 个，已填充 ${response.filled || 0} 个，建议确认 ${response.suggestions || 0} 个。`);
+  setResult([
+    `顶层 ${diagnostics.topFrameFields || 0}｜iframe ${diagnostics.iframeFields || 0}｜Shadow DOM ${diagnostics.shadowFields || 0}`,
+    `跳过 ${diagnostics.skipped || 0}｜敏感字段跳过 ${diagnostics.sensitiveSkipped || 0}｜执行失败 ${diagnostics.failed || 0}`,
+    frameAccessText(diagnostics)
+  ].filter(Boolean).join("\n"));
 }
 
 async function learnCurrentPage() {
   setResult("");
-  setStatus("正在学习当前页面的已填写内容...");
+  setStatus("正在学习所有可访问表单中的已填写内容...");
   const tab = await getActiveTab();
   const { profile, fieldMemory } = await chrome.storage.local.get(["profile", "fieldMemory"]);
-  const response = await sendToTab(tab.id, { type: "APPLYPILOT_LEARN", profile, fieldMemory });
+  const response = await sendToBackground({
+    type: "APPLYPILOT_TAB_LEARN",
+    tabId: tab?.id,
+    profile,
+    fieldMemory
+  });
+
   if (!response?.ok) {
-    setStatus("学习失败。请确认页面已经加载完成。");
+    setStatus(scanFailureMessage(response, "学习失败"));
     return;
   }
-  setStatus(`已记住 ${response.learned} 个字段。`);
-  setResult("下次遇到同站点或相同问题时，会优先使用记忆内容。");
+  setStatus(`已记住 ${response.learned || 0} 个字段。`);
+  setResult("下次遇到同站点或相同问题时，会优先使用已确认记忆。若页面有多个 iframe，确认框可能逐帧出现。");
 }
 
 async function getActiveTab() {
@@ -65,8 +74,21 @@ async function getActiveTab() {
   return tab;
 }
 
-function sendToTab(tabId, message) {
-  return chrome.tabs.sendMessage(tabId, message).catch(() => null);
+function sendToBackground(message) {
+  return chrome.runtime.sendMessage(message).catch(() => null);
+}
+
+function scanFailureMessage(response, prefix = "这个页面暂时无法扫描") {
+  if (response?.error === "no-accessible-form-frames") {
+    return `${prefix}。请刷新页面，并确认不是 chrome://、扩展商店或浏览器内部页面。`;
+  }
+  return `${prefix}。请刷新网申页面和扩展后再试一次。`;
+}
+
+function frameAccessText(diagnostics) {
+  if (!diagnostics?.totalFrames) return "";
+  const inaccessible = diagnostics.inaccessibleFrames || 0;
+  return `可访问框架 ${diagnostics.accessibleFrames || 0}/${diagnostics.totalFrames}${inaccessible ? `，另有 ${inaccessible} 个框架受浏览器权限限制` : ""}。`;
 }
 
 function setStatus(text) {
