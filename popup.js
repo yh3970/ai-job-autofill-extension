@@ -49,6 +49,7 @@ async function fillCurrentPage() {
   }
 
   const diagnostics = response.diagnostics || {};
+  const coverage = profileCoverageSummary(response.debugRows || []);
   setStatus(`扫描 ${response.scanned || 0} 个字段，匹配 ${diagnostics.matched || 0} 个，已填充 ${response.filled || 0} 个，建议确认 ${response.suggestions || 0} 个。`);
   const failurePreview = formatFailurePreview(response.uncertain || []);
   const monitorText = response.monitoring?.enabled
@@ -58,6 +59,7 @@ async function fillCurrentPage() {
     `顶层 ${diagnostics.topFrameFields || 0}｜iframe ${diagnostics.iframeFields || 0}｜Shadow DOM ${diagnostics.shadowFields || 0}`,
     `已识别标签 ${diagnostics.labelledFields || 0}｜未识别标签 ${diagnostics.unlabelledFields || 0}`,
     `跳过 ${diagnostics.skipped || 0}｜敏感字段跳过 ${diagnostics.sensitiveSkipped || 0}｜执行失败 ${diagnostics.failed || 0}`,
+    coverage,
     `通用适配补填 ${diagnostics.universalFilled || 0}｜站点适配补填 ${diagnostics.djiAdapterFilled || 0}`,
     monitorText,
     frameAccessText(diagnostics),
@@ -111,6 +113,15 @@ function monitorSummary(response) {
   if (!response?.ok) return "";
   const stats = response.stats || {};
   return `记忆库 ${response.memoryCount || 0} 条｜自动学习 ${stats.totalLearned || 0} 次｜修正 ${stats.correctedAutofill || 0} 次｜失败后补填 ${stats.recoveredAfterFailure || 0} 次。`;
+}
+
+function profileCoverageSummary(debugRows) {
+  const rows = Array.isArray(debugRows) ? debugRows : [];
+  const noValue = rows.filter((row) => row.reason === "no-value").length;
+  const lowConfidence = rows.filter((row) => row.reason === "low-confidence").length;
+  const sensitive = rows.filter((row) => row.reason === "sensitive-field-requires-explicit-preference").length;
+  if (!noValue && !lowConfidence && !sensitive) return "";
+  return `未找到可用 Profile/记忆值 ${noValue}｜低置信度 ${lowConfidence}｜敏感信息保护 ${sensitive}`;
 }
 
 function formatFailurePreview(uncertain) {
