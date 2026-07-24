@@ -22,10 +22,12 @@ jobs:
             popup.js \
             optionsEnhancements.js \
             formScanner.js \
+            legacySectionAdapter.js \
             formActions.js \
             formAutofillAgent.js \
             siteAdapters.js \
             universalAdapter.js \
+            repeatedProfileAdapter.js \
             phoneValueAdapter.js \
             learningMonitor.js \
             mainWorldBridge.js \
