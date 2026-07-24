@@ -7,6 +7,7 @@
   if (!scanner || !actionsApi) return;
 
   const originalExecute = actionsApi.execute.bind(actionsApi);
+  const DATE_LABEL = /^(?:开始时间|起始时间|入学时间|就读开始|项目开始|任职开始|实习开始|结束时间|终止时间|毕业时间|项目结束|任职结束|实习结束|start(?: date)?|end(?: date)?|from|to|begin|finish|date|日期|时间|年|月)$/i;
 
   const RULES = [
     rule(/^education\.\d+\.school$/, /^(?:school(?: name)?|university(?: name)?|institution(?: name)?|college name|学校(?:名称)?|院校(?:名称)?|大学(?:名称)?|毕业院校)$/i),
@@ -32,9 +33,9 @@
     rule(/^personal\.(?:fullName|chineseName|preferredName)$/, /^(?:full name|legal name|candidate name|applicant name|name|姓名|全名|中文名|中文姓名|常用名|英文名)$/i),
     rule(/^personal\.firstName$/, /^(?:first name|given name|forename|名|名字)$/i),
     rule(/^personal\.lastName$/, /^(?:last name|family name|surname|姓)$/i),
-    rule(/^personal\.(?:latestSchool)$/, /^(?:school|university|college|学校|毕业院校|院校)$/i),
-    rule(/^personal\.(?:latestMajor)$/, /^(?:major|field of study|专业|所学专业)$/i),
-    rule(/^personal\.(?:highestDegree)$/, /^(?:highest degree|highest education|education level|academic degree|最高学历|学历|学位)$/i)
+    rule(/^personal\.latestSchool$/, /^(?:school|university|college|学校|毕业院校|院校)$/i),
+    rule(/^personal\.latestMajor$/, /^(?:major|field of study|专业|所学专业)$/i),
+    rule(/^personal\.highestDegree$/, /^(?:highest degree|highest education|education level|academic degree|最高学历|学历|学位)$/i)
   ];
 
   actionsApi.execute = async function executeWithFieldSafety(action, element) {
@@ -90,6 +91,4 @@
       .replace(/\s+/g, " ")
       .trim();
   }
-
-  const DATE_LABEL = /^(?:开始时间|起始时间|入学时间|就读开始|项目开始|任职开始|实习开始|结束时间|终止时间|毕业时间|项目结束|任职结束|实习结束|start(?: date)?|end(?: date)?|from|to|begin|finish|date|日期|时间|年|月)$/i;
 })();
