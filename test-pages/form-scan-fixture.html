@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ApplyPilot form scanning fixture</title>
+    <style>
+      body { max-width: 860px; margin: 32px auto; padding: 0 20px; font: 15px/1.5 system-ui, sans-serif; }
+      section, fieldset { margin: 18px 0; padding: 16px; border: 1px solid #cfd6e4; }
+      label { display: block; margin: 10px 0; }
+      input, textarea, select { display: block; width: min(100%, 520px); padding: 8px; }
+      iframe { width: 100%; min-height: 260px; border: 1px solid #cfd6e4; }
+      #submitStatus { font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <h1>ApplyPilot scanning fixture</h1>
+    <p>用于手动验证普通 DOM、动态字段、开放式 Shadow DOM、iframe 以及常见控件。提交按钮只更新状态，不会发送数据。</p>
+
+    <form id="fixtureForm">
+      <section aria-labelledby="contactHeading">
+        <h2 id="contactHeading">Contact information</h2>
+        <label for="fullName">Full name</label>
+        <input id="fullName" name="fullName" autocomplete="name">
+
+        <label for="email">Email address</label>
+        <input id="email" name="email" type="email" autocomplete="email">
+
+        <label for="phone">Mobile phone</label>
+        <input id="phone" name="phone" type="tel" autocomplete="tel">
+
+        <label for="nationality">Nationality</label>
+        <select id="nationality" name="nationality">
+          <option value="">Please select</option>
+          <option value="China">China</option>
+          <option value="United Kingdom">United Kingdom</option>
+          <option value="United States">United States</option>
+        </select>
+
+        <label for="availableDate">Available start date</label>
+        <input id="availableDate" name="availableDate" type="date">
+      </section>
+
+      <fieldset>
+        <legend>Application preferences</legend>
+        <label><input id="relocation" name="relocation" type="checkbox"> Willing to relocate</label>
+
+        <p>Will you require visa sponsorship?</p>
+        <label><input type="radio" name="visaSponsorship" value="Yes"> Yes</label>
+        <label><input type="radio" name="visaSponsorship" value="No"> No</label>
+      </fieldset>
+
+      <section aria-labelledby="eeoHeading">
+        <h2 id="eeoHeading">Optional EEO information</h2>
+        <label for="gender">Gender</label>
+        <select id="gender" name="gender">
+          <option value="">Prefer not to answer</option>
+          <option value="Female">Female</option>
+          <option value="Male">Male</option>
+        </select>
+
+        <label for="ordinaryEmail">Ordinary contact email beside an EEO field</label>
+        <input id="ordinaryEmail" name="ordinaryEmail" type="email" autocomplete="email">
+      </section>
+
+      <section aria-labelledby="dynamicHeading">
+        <h2 id="dynamicHeading">Dynamically rendered field</h2>
+        <div id="dynamicHost">The portfolio field appears after 700 ms.</div>
+      </section>
+
+      <section aria-labelledby="shadowHeading">
+        <h2 id="shadowHeading">Open Shadow DOM field</h2>
+        <div id="shadowHost"></div>
+      </section>
+
+      <button type="submit">Submit fixture</button>
+      <p id="submitStatus">Not submitted</p>
+    </form>
+
+    <section aria-labelledby="iframeHeading">
+      <h2 id="iframeHeading">Same-origin iframe form</h2>
+      <iframe id="applicationFrame" title="Embedded application form"></iframe>
+    </section>
+
+    <script>
+      const shadowRoot = document.querySelector("#shadowHost").attachShadow({ mode: "open" });
+      shadowRoot.innerHTML = `
+        <style>label { display:block; margin:8px 0 } input { display:block; width:90%; padding:8px }</style>
+        <label for="linkedin">LinkedIn profile</label>
+        <input id="linkedin" name="linkedin" aria-label="LinkedIn profile">
+      `;
+
+      setTimeout(() => {
+        document.querySelector("#dynamicHost").innerHTML = `
+          <label for="portfolio">Portfolio website</label>
+          <input id="portfolio" name="portfolio" type="url" autocomplete="url">
+        `;
+      }, 700);
+
+      document.querySelector("#applicationFrame").srcdoc = `
+        <!doctype html>
+        <html lang="en">
+          <body>
+            <form>
+              <h2>Embedded personal information</h2>
+              <label for="firstName">First name</label>
+              <input id="firstName" name="firstName" autocomplete="given-name">
+              <label for="lastName">Last name</label>
+              <input id="lastName" name="lastName" autocomplete="family-name">
+              <label for="address">Street address</label>
+              <textarea id="address" name="address" autocomplete="street-address"></textarea>
+            </form>
+          </body>
+        </html>
+      `;
+
+      document.querySelector("#fixtureForm").addEventListener("submit", (event) => {
+        event.preventDefault();
+        document.querySelector("#submitStatus").textContent = "Submit was clicked manually; network submission was prevented.";
+      });
+    </script>
+  </body>
+</html>
