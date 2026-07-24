@@ -33,7 +33,7 @@ async function init() {
 
 async function fillCurrentPage() {
   setResult("");
-  setStatus("正在识别表格、日期控件和重复经历区块...");
+  setStatus("正在自动新增并填写教育、工作和项目经历...");
   const tab = await getActiveTab();
   const { profile, fieldMemory } = await chrome.storage.local.get(["profile", "fieldMemory"]);
   const response = await sendToBackground({
@@ -58,9 +58,10 @@ async function fillCurrentPage() {
   setResult([
     `顶层 ${diagnostics.topFrameFields || 0}｜iframe ${diagnostics.iframeFields || 0}｜Shadow DOM ${diagnostics.shadowFields || 0}`,
     `已识别标签 ${diagnostics.labelledFields || 0}｜未识别标签 ${diagnostics.unlabelledFields || 0}`,
+    `自动新增 ${diagnostics.repeatRowsAdded || 0} 行：教育 ${diagnostics.educationRowsAdded || 0}｜工作/实习 ${diagnostics.experienceRowsAdded || 0}｜项目 ${diagnostics.projectRowsAdded || 0}`,
     `跳过 ${diagnostics.skipped || 0}｜敏感字段跳过 ${diagnostics.sensitiveSkipped || 0}｜执行失败 ${diagnostics.failed || 0}`,
     coverage,
-    `通用适配补填 ${diagnostics.universalFilled || 0}｜重复经历补填 ${diagnostics.repeatedFallbackFilled || 0}｜站点适配补填 ${diagnostics.djiAdapterFilled || 0}`,
+    `通用适配补填 ${diagnostics.universalFilled || 0}｜重复经历补填 ${diagnostics.repeatedFallbackFilled || 0}｜项目经历补填 ${diagnostics.projectProfileFilled || 0}｜站点适配补填 ${diagnostics.djiAdapterFilled || 0}`,
     monitorText,
     frameAccessText(diagnostics),
     failurePreview
@@ -127,7 +128,7 @@ function profileCoverageSummary(debugRows) {
 function formatFailurePreview(uncertain) {
   const failures = uncertain
     .filter((item) => item.reason && !String(item.reason).startsWith("missing-add-"))
-    .slice(0, 4);
+    .slice(0, 5);
   if (!failures.length) return "";
   return `失败示例：\n${failures.map((item) => {
     const label = String(item.label || item.debug?.label || item.source || "字段").replace(/\s+/g, " ").slice(0, 38);
@@ -151,6 +152,16 @@ function translateReason(reason) {
     "universal-action-failed": "通用适配器填写失败",
     "repeated-target-not-found": "重复经历区块中的字段已被页面替换",
     "repeated-action-failed": "重复经历字段填写失败",
+    "repeat-add-button-not-found-education": "未找到新增教育经历按钮",
+    "repeat-add-button-not-found-experience": "未找到新增工作/实习经历按钮",
+    "repeat-add-button-not-found-projects": "未找到新增项目经历按钮",
+    "repeat-add-click-failed-education": "教育经历新增按钮点击失败",
+    "repeat-add-click-failed-experience": "工作/实习经历新增按钮点击失败",
+    "repeat-add-click-failed-projects": "项目经历新增按钮点击失败",
+    "repeat-row-not-created-education": "点击后没有生成新的教育经历行",
+    "repeat-row-not-created-experience": "点击后没有生成新的工作/实习经历行",
+    "repeat-row-not-created-projects": "点击后没有生成新的项目经历行",
+    "project-action-failed": "项目经历字段填写失败",
     "adapter-target-not-found": "站点适配器找不到原字段"
   };
   return labels[reason] || reason;
