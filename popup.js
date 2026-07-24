@@ -33,7 +33,7 @@ async function init() {
 
 async function fillCurrentPage() {
   setResult("");
-  setStatus("正在识别表格、动态组件和重复经历区块...");
+  setStatus("正在识别表格、日期控件和重复经历区块...");
   const tab = await getActiveTab();
   const { profile, fieldMemory } = await chrome.storage.local.get(["profile", "fieldMemory"]);
   const response = await sendToBackground({
@@ -60,7 +60,7 @@ async function fillCurrentPage() {
     `已识别标签 ${diagnostics.labelledFields || 0}｜未识别标签 ${diagnostics.unlabelledFields || 0}`,
     `跳过 ${diagnostics.skipped || 0}｜敏感字段跳过 ${diagnostics.sensitiveSkipped || 0}｜执行失败 ${diagnostics.failed || 0}`,
     coverage,
-    `通用适配补填 ${diagnostics.universalFilled || 0}｜站点适配补填 ${diagnostics.djiAdapterFilled || 0}`,
+    `通用适配补填 ${diagnostics.universalFilled || 0}｜重复经历补填 ${diagnostics.repeatedFallbackFilled || 0}｜站点适配补填 ${diagnostics.djiAdapterFilled || 0}`,
     monitorText,
     frameAccessText(diagnostics),
     failurePreview
@@ -149,6 +149,8 @@ function translateReason(reason) {
     "isolated-action-failed": "普通填写方式失败",
     "universal-target-not-found": "通用适配器找不到原字段",
     "universal-action-failed": "通用适配器填写失败",
+    "repeated-target-not-found": "重复经历区块中的字段已被页面替换",
+    "repeated-action-failed": "重复经历字段填写失败",
     "adapter-target-not-found": "站点适配器找不到原字段"
   };
   return labels[reason] || reason;

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ApplyPilot",
   "description": "Cross-site job application autofill with local semantic matching, monitored corrections, and reusable memory.",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "permissions": ["activeTab", "storage", "scripting", "webNavigation"],
   "host_permissions": ["<all_urls>"],
   "action": {
@@ -27,10 +27,12 @@
       "js": [
         "aiSemanticMatcher.js",
         "formScanner.js",
+        "legacySectionAdapter.js",
         "formActions.js",
         "formAutofillAgent.js",
         "siteAdapters.js",
         "universalAdapter.js",
+        "repeatedProfileAdapter.js",
         "phoneValueAdapter.js",
         "learningMonitor.js",
         "contentScriptV2.js"
