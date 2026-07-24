@@ -26,6 +26,7 @@ jobs:
             formAutofillAgent.js \
             siteAdapters.js \
             universalAdapter.js \
+            phoneValueAdapter.js \
             learningMonitor.js \
             mainWorldBridge.js \
             contentScriptV2.js; do

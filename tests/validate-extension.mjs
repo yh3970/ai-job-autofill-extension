@@ -14,7 +14,7 @@ const scripts = isolatedEntry?.js || [];
 
 console.log("validate: manifest");
 assert.equal(manifest.manifest_version, 3);
-assert.equal(manifest.version, "0.6.0");
+assert.equal(manifest.version, "0.6.1");
 assert.equal(isolatedEntry?.all_frames, true);
 assert.equal(isolatedEntry?.match_about_blank, true);
 assert.ok(mainEntry?.js?.includes("mainWorldBridge.js"));
@@ -26,6 +26,7 @@ const requiredScripts = [
   "formAutofillAgent.js",
   "siteAdapters.js",
   "universalAdapter.js",
+  "phoneValueAdapter.js",
   "learningMonitor.js",
   "contentScriptV2.js"
 ];
@@ -35,7 +36,8 @@ for (const script of requiredScripts) {
 }
 assert.ok(scripts.indexOf("formAutofillAgent.js") < scripts.indexOf("siteAdapters.js"));
 assert.ok(scripts.indexOf("siteAdapters.js") < scripts.indexOf("universalAdapter.js"));
-assert.ok(scripts.indexOf("universalAdapter.js") < scripts.indexOf("learningMonitor.js"));
+assert.ok(scripts.indexOf("universalAdapter.js") < scripts.indexOf("phoneValueAdapter.js"));
+assert.ok(scripts.indexOf("phoneValueAdapter.js") < scripts.indexOf("learningMonitor.js"));
 assert.ok(scripts.indexOf("learningMonitor.js") < scripts.indexOf("contentScriptV2.js"));
 
 console.log("validate: universal scanner");
@@ -48,11 +50,15 @@ assert.ok(scanner.includes("shadowRoot"));
 console.log("validate: matching and learning");
 const semantic = await read("aiSemanticMatcher.js");
 const universal = await read("universalAdapter.js");
+const phoneAdapter = await read("phoneValueAdapter.js");
 const monitor = await read("learningMonitor.js");
 assert.ok(semantic.includes("canonicalLabel"));
 assert.ok(semantic.includes("personal.birthDate"));
 assert.ok(universal.includes("runUniversalAdapter"));
 assert.ok(universal.includes("groupFields"));
+assert.ok(phoneAdapter.includes("deriveAreaValue"));
+assert.ok(phoneAdapter.includes("deriveLocalNumber"));
+assert.ok(phoneAdapter.includes("phone-area-already-selected"));
 assert.ok(monitor.includes("corrected-autofill"));
 assert.ok(monitor.includes("recovered-after-failure"));
 assert.ok(monitor.includes("event.isTrusted"));
@@ -62,6 +68,7 @@ for (const file of [
   "formAutofillAgent.js",
   "siteAdapters.js",
   "universalAdapter.js",
+  "phoneValueAdapter.js",
   "learningMonitor.js",
   "mainWorldBridge.js"
 ]) {
