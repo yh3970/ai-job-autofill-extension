@@ -10,6 +10,7 @@
 
   const EDUCATION_MARKER = /^(?:\*\s*)?(?:教育经历|教育背景|学历经历|学习经历|education(?:\s+background)?)(?:\s*[（(]?\d+[）)]?)?$/i;
   const EXPERIENCE_MARKER = /^(?:\*\s*)?(?:工作经历(?:\s*[/／]\s*实习经历)?|实习经历|工作经验|任职经历|职业经历|employment(?:\s+history)?|work\s+experience|internship)(?:\s*[（(]?\d+[）)]?)?$/i;
+  const BASIC_MARKER = /^(?:\*\s*)?(?:个人基本信息|个人信息|基本信息|求职意向|家庭关系|家庭成员|候选人附件|附件|personal(?:\s+information)?|basic(?:\s+information)?|job\s+preference|family|attachments?)$/i;
   const START_PATTERN = /^(?:开始时间|起始时间|入学时间|任职开始|实习开始|start(?:\s+date)?|from)$/i;
   const EDUCATION_ANCHOR = /school|university|college|institution|学校|院校|大学/i;
   const EXPERIENCE_ANCHOR = /company|employer|organization|企业名称|公司|单位|雇主|机构/i;
@@ -35,7 +36,11 @@
       const inferred = inferSection(element, markers);
       if (inferred) {
         field.section = inferred;
-        field.sectionText = inferred === "education" ? "education" : "work experience";
+        field.sectionText = inferred === "education"
+          ? "education"
+          : inferred === "internship"
+            ? "work experience"
+            : "basic information";
         field.normalizedText = scanner.normalizeText(`${field.text} ${field.sectionText}`);
       }
       return field;
@@ -68,7 +73,9 @@
         ? "education"
         : EXPERIENCE_MARKER.test(text)
           ? "internship"
-          : "";
+          : BASIC_MARKER.test(text)
+            ? "basic"
+            : "";
       return section && isVisible(element) && !element.querySelector(FIELD_SELECTOR)
         ? { element, section, text }
         : null;
@@ -102,6 +109,7 @@
         .join(" ");
       if (EDUCATION_MARKER.test(directText)) return "education";
       if (EXPERIENCE_MARKER.test(directText)) return "internship";
+      if (BASIC_MARKER.test(directText)) return "basic";
     }
     return "";
   }
