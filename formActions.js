@@ -3,8 +3,63 @@
 
   const scanner = window.ApplyPilotFormScanner;
   const WAIT_MS = 220;
+  const REQUEST_EVENT = "__applypilot_main_action_v1";
+  const RESULT_EVENT = "__applypilot_main_result_v1";
 
   async function execute(action, element) {
+    const mainWorldResult = await executeInMainWorld(action, element);
+    if (mainWorldResult?.ok) return mainWorldResult;
+
+    const isolatedOk = await executeIsolated(action, element);
+    if (isolatedOk) {
+      return { ok: true, method: "isolated-fallback", bridgeReason: mainWorldResult?.reason || "" };
+    }
+    return {
+      ok: false,
+      reason: mainWorldResult?.reason || "isolated-action-failed",
+      method: mainWorldResult?.method || "none"
+    };
+  }
+
+  async function executeInMainWorld(action, element) {
+    const requestId = `ap-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const payload = {
+      requestId,
+      type: action.type,
+      fieldId: action.fieldId || element?.getAttribute(scanner.AP_ID) || "",
+      targetId: action.targetId || "",
+      value: action.value,
+      fieldLabel: action.debug?.label || scanner.getElementText(element)
+    };
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const timeout = window.setTimeout(() => finish({ ok: false, reason: "main-world-bridge-timeout" }), 2400);
+
+      function finish(result) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        document.removeEventListener(RESULT_EVENT, onResult);
+        resolve(result);
+      }
+
+      function onResult(event) {
+        try {
+          const result = JSON.parse(String(event.detail || "{}"));
+          if (result.requestId !== requestId) return;
+          finish(result);
+        } catch (error) {
+          finish({ ok: false, reason: "main-world-result-invalid" });
+        }
+      }
+
+      document.addEventListener(RESULT_EVENT, onResult);
+      document.dispatchEvent(new CustomEvent(REQUEST_EVENT, { detail: JSON.stringify(payload) }));
+    });
+  }
+
+  async function executeIsolated(action, element) {
     if (action.type === "click") return clickElement(element);
     if (action.type === "inputText") return inputText(element, action.value);
     if (action.type === "selectOption") return selectOption(element, action.value);
@@ -17,18 +72,19 @@
   async function inputText(element, value) {
     await clickElement(element);
     const text = String(value ?? "");
-    const tag = element.tagName.toLowerCase();
-    if (element.isContentEditable || (element.getAttribute("role") === "textbox" && !["input", "textarea"].includes(tag))) {
-      element.textContent = text;
-      dispatchFullEvents(element, text);
+    const editable = findEditable(element) || element;
+    const tag = editable.tagName.toLowerCase();
+    if (editable.isContentEditable || (editable.getAttribute("role") === "textbox" && !["input", "textarea"].includes(tag))) {
+      editable.textContent = text;
+      dispatchFullEvents(editable, text);
       await scanner.sleep(30);
-      return scanner.normalizeText(element.textContent) === scanner.normalizeText(text);
+      return scanner.normalizeText(editable.textContent) === scanner.normalizeText(text);
     }
     if (["textarea", "input"].includes(tag)) {
-      setNativeValue(element, text);
-      dispatchFullEvents(element, text);
-      await scanner.sleep(30);
-      return scanner.normalizeText(element.value) === scanner.normalizeText(text);
+      setNativeValue(editable, text);
+      dispatchFullEvents(editable, text);
+      await scanner.sleep(40);
+      return scanner.normalizeText(editable.value) === scanner.normalizeText(text);
     }
     return false;
   }
@@ -56,31 +112,33 @@
 
   async function selectDate(element, value) {
     const normalized = normalizeDate(value);
-    if (element.tagName.toLowerCase() === "input") {
-      await clickElement(element);
-      setNativeValue(element, normalized);
-      dispatchFullEvents(element, normalized);
-      return scanner.normalizeText(element.value) === scanner.normalizeText(normalized);
+    const editable = findEditable(element) || element;
+    if (editable.tagName.toLowerCase() === "input") {
+      await clickElement(editable);
+      setNativeValue(editable, normalized);
+      dispatchFullEvents(editable, normalized);
+      return scanner.normalizeText(editable.value) === scanner.normalizeText(normalized);
     }
-    return inputText(element, normalized);
+    return inputText(editable, normalized);
   }
 
   async function setChecked(element, value) {
     const desired = parseBoolean(value);
     if (desired === null) return false;
-    if (scanner.getCheckedState(element) === desired) return true;
-    await clickElement(scanner.getClickableProxy(element) || element);
-    await scanner.sleep(40);
-    if (scanner.getCheckedState(element) === desired) return true;
-    if (element instanceof HTMLInputElement) {
+    const control = findCheckable(element) || element;
+    if (scanner.getCheckedState(control) === desired) return true;
+    await clickElement(scanner.getClickableProxy(control) || control);
+    await scanner.sleep(50);
+    if (scanner.getCheckedState(control) === desired) return true;
+    if (control instanceof HTMLInputElement) {
       const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "checked");
-      if (descriptor?.set) descriptor.set.call(element, desired);
-      else element.checked = desired;
+      if (descriptor?.set) descriptor.set.call(control, desired);
+      else control.checked = desired;
     } else {
-      element.setAttribute("aria-checked", String(desired));
+      control.setAttribute("aria-checked", String(desired));
     }
-    dispatchFullEvents(element, String(desired));
-    return scanner.getCheckedState(element) === desired;
+    dispatchFullEvents(control, String(desired));
+    return scanner.getCheckedState(control) === desired;
   }
 
   async function selectRadio(element, value) {
@@ -91,10 +149,11 @@
       return optionTextMatches(valueText, labelText, expected);
     });
     if (!option) return false;
-    if (scanner.getCheckedState(option)) return true;
-    await clickElement(scanner.getClickableProxy(option) || option);
-    await scanner.sleep(40);
-    return scanner.getCheckedState(option);
+    const control = findCheckable(option) || option;
+    if (scanner.getCheckedState(control)) return true;
+    await clickElement(scanner.getClickableProxy(control) || control);
+    await scanner.sleep(50);
+    return scanner.getCheckedState(control);
   }
 
   async function clickElement(element) {
@@ -102,10 +161,10 @@
     try {
       element.scrollIntoView?.({ block: "center", inline: "nearest" });
       element.focus?.();
-      element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "mouse" }));
-      element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-      element.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "mouse" }));
-      element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true, pointerType: "mouse" }));
+      element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, composed: true }));
+      element.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, composed: true, pointerType: "mouse" }));
+      element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, composed: true }));
       element.click?.();
       await scanner.sleep(40);
       return true;
@@ -115,11 +174,23 @@
     }
   }
 
+  function findEditable(element) {
+    if (element?.matches?.("input, textarea, [contenteditable='true']")) return element;
+    return element?.querySelector?.("input:not([type='hidden']), textarea, [contenteditable='true']") || null;
+  }
+
+  function findCheckable(element) {
+    if (element?.matches?.("input[type='checkbox'], input[type='radio'], [role='checkbox'], [role='radio']")) return element;
+    return element?.querySelector?.("input[type='checkbox'], input[type='radio'], [role='checkbox'], [role='radio']") || null;
+  }
+
   function findOpenOption(value) {
     const expected = scanner.normalizeText(value);
     return scanner.deepQueryAll([
       "[role='option']", ".ant-select-item-option", ".el-select-dropdown__item",
-      ".select2-results__option", "[class*='option']", "li"
+      ".arco-select-option", ".semi-select-option", ".t-select-option",
+      ".select2-results__option", "[class*='select-option']", "[class*='dropdown-item']",
+      "[class*='menu-item']", "[class*='option-item']", "li"
     ].join(",")).filter(isVisible).find((option) => optionMatches(option.getAttribute("data-value"), option.innerText || option.textContent, expected));
   }
 
@@ -131,16 +202,16 @@
   }
 
   function dispatchFullEvents(element, value) {
-    element.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
+    element.dispatchEvent(new FocusEvent("focus", { bubbles: true, composed: true }));
     try {
-      element.dispatchEvent(new InputEvent("beforeinput", { bubbles: true, inputType: "insertText", data: String(value ?? "") }));
-      element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: String(value ?? "") }));
+      element.dispatchEvent(new InputEvent("beforeinput", { bubbles: true, composed: true, inputType: "insertText", data: String(value ?? "") }));
+      element.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, inputType: "insertText", data: String(value ?? "") }));
     } catch (error) {
-      element.dispatchEvent(new Event("input", { bubbles: true }));
+      element.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
     }
-    element.dispatchEvent(new Event("change", { bubbles: true }));
-    element.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true }));
-    element.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
+    element.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    element.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, composed: true }));
+    element.dispatchEvent(new FocusEvent("blur", { bubbles: true, composed: true }));
   }
 
   function optionMatches(value, text, expected) {
@@ -168,8 +239,8 @@
   function parseBoolean(value) {
     if (typeof value === "boolean") return value;
     const normalized = scanner.normalizeText(value);
-    if (/^(true|yes|y|1|是|同意|接受|需要|愿意)$/.test(normalized)) return true;
-    if (/^(false|no|n|0|否|不同意|不接受|不需要|不愿意)$/.test(normalized)) return false;
+    if (/^(true|yes|y|1|是|有|同意|接受|需要|愿意|至今|present|current)$/.test(normalized)) return true;
+    if (/^(false|no|n|0|否|无|不同意|不接受|不需要|不愿意)$/.test(normalized)) return false;
     return null;
   }
 
