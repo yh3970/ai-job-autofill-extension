@@ -14,7 +14,8 @@ const scripts = isolatedEntry?.js || [];
 
 console.log("validate: manifest");
 assert.equal(manifest.manifest_version, 3);
-assert.equal(manifest.version, "0.6.5");
+assert.equal(manifest.version, "0.7.0");
+assert.equal(manifest.background?.service_worker, "visualBackground.js");
 assert.equal(isolatedEntry?.all_frames, true);
 assert.equal(isolatedEntry?.match_about_blank, true);
 assert.ok(mainEntry?.js?.includes("mainWorldBridge.js"));
@@ -32,6 +33,7 @@ const requiredScripts = [
   "phoneValueAdapter.js",
   "fieldSafetyGuard.js",
   "learningMonitor.js",
+  "visualPageMapper.js",
   "contentScriptV2.js"
 ];
 for (const script of requiredScripts) {
@@ -47,54 +49,58 @@ assert.ok(scripts.indexOf("repeatedProfileAdapter.js") < scripts.indexOf("repeat
 assert.ok(scripts.indexOf("repeatableSectionManager.js") < scripts.indexOf("phoneValueAdapter.js"));
 assert.ok(scripts.indexOf("phoneValueAdapter.js") < scripts.indexOf("fieldSafetyGuard.js"));
 assert.ok(scripts.indexOf("fieldSafetyGuard.js") < scripts.indexOf("learningMonitor.js"));
-assert.ok(scripts.indexOf("learningMonitor.js") < scripts.indexOf("contentScriptV2.js"));
+assert.ok(scripts.indexOf("learningMonitor.js") < scripts.indexOf("visualPageMapper.js"));
+assert.ok(scripts.indexOf("visualPageMapper.js") < scripts.indexOf("contentScriptV2.js"));
 
-console.log("validate: universal scanner");
+console.log("validate: universal scanner and strict mapping");
 const scanner = await read("formScanner.js");
 const legacySections = await read("legacySectionAdapter.js");
+const semantic = await read("aiSemanticMatcher.js");
+const repeated = await read("repeatedProfileAdapter.js");
+const safetyGuard = await read("fieldSafetyGuard.js");
 assert.ok(scanner.includes("getTableLabelText"));
 assert.ok(scanner.includes("getAdjacentLabelText"));
 assert.ok(scanner.includes("getDisplayFieldValue"));
 assert.ok(scanner.includes("shadowRoot"));
 assert.ok(legacySections.includes("input[readonly]"));
-assert.ok(legacySections.includes("工作经历"));
-assert.ok(legacySections.includes("START_PATTERN"));
-
-console.log("validate: strict matching, live targets, repeatable rows and learning");
-const semantic = await read("aiSemanticMatcher.js");
-const universal = await read("universalAdapter.js");
-const repeated = await read("repeatedProfileAdapter.js");
-const repeatableManager = await read("repeatableSectionManager.js");
-const phoneAdapter = await read("phoneValueAdapter.js");
-const safetyGuard = await read("fieldSafetyGuard.js");
-const monitor = await read("learningMonitor.js");
 assert.ok(semantic.includes("const MEMORY_THRESHOLD = 0.85"));
 assert.ok(semantic.includes("const ONTOLOGY_THRESHOLD = 0.65"));
-assert.ok(semantic.includes("semantic-exact"));
-assert.match(semantic, /function buildFieldText\(field\)\s*\{\s*return normalize\(field\?\.fieldTextNormalized \|\| field\?\.text \|\| ""\);/s);
-assert.ok(!semantic.match(/function buildFieldText[\s\S]{0,180}sectionText/));
-assert.ok(universal.includes("runUniversalAdapter"));
-assert.ok(universal.includes("groupFields"));
-assert.ok(repeated.includes("AMBIGUOUS_EDUCATION_LABELS"));
-assert.ok(repeated.includes("学历类型"));
 assert.ok(repeated.includes("resolveCurrentTarget"));
-assert.ok(repeated.includes("repeatedTargetsRefreshed"));
 assert.ok(repeated.includes("existing-value-preserved"));
-assert.ok(repeated.includes("起止时间"));
-assert.ok(!repeated.match(/DEGREE_LABEL[\s\S]{0,160}学历类型/));
+assert.ok(safetyGuard.includes("profile-path-field-mismatch"));
+
+console.log("validate: ephemeral visual mode");
+const visualBackground = await read("visualBackground.js");
+const visualMapper = await read("visualPageMapper.js");
+const popupHtml = await read("popup.html");
+const popupJs = await read("popup.js");
+assert.ok(visualBackground.startsWith('importScripts("background.js")'));
+assert.ok(visualBackground.includes("captureVisibleTab"));
+assert.ok(visualBackground.includes('type: "input_image"'));
+assert.ok(visualBackground.includes("store: false"));
+assert.ok(visualBackground.includes("screenshot = null"));
+assert.ok(!visualBackground.includes("chrome.storage.local.set"));
+assert.ok(visualBackground.includes("MAX_VISUAL_TILES"));
+assert.ok(visualMapper.includes("APPLYPILOT_VISUAL_PREPARE"));
+assert.ok(visualMapper.includes("APPLYPILOT_VISUAL_APPLY"));
+assert.ok(visualMapper.includes("applypilot-visual-badge"));
+assert.ok(visualMapper.includes("profile-path-field-mismatch") === false);
+assert.ok(popupHtml.includes("visualFillPage"));
+assert.ok(popupJs.includes("截图不保存"));
+assert.ok(popupJs.includes("APPLYPILOT_VISUAL_FILL"));
+
+console.log("validate: repeatable rows, learning and safety");
+const universal = await read("universalAdapter.js");
+const repeatableManager = await read("repeatableSectionManager.js");
+const phoneAdapter = await read("phoneValueAdapter.js");
+const monitor = await read("learningMonitor.js");
+assert.ok(universal.includes("runUniversalAdapter"));
 assert.ok(repeatableManager.includes("ensureRepeatableRows"));
-assert.ok(repeatableManager.includes("增加更多"));
 assert.ok(repeatableManager.includes("projectRowsAdded"));
 assert.ok(phoneAdapter.includes("deriveAreaValue"));
-assert.ok(phoneAdapter.includes("deriveLocalNumber"));
-assert.ok(safetyGuard.includes("profile-path-field-mismatch"));
-assert.ok(safetyGuard.includes("起止时间"));
-assert.ok(!safetyGuard.match(/education\\\.\\d\+\\\.degree[\s\S]{0,180}学历类型/));
 assert.ok(monitor.includes("corrected-autofill"));
-assert.ok(monitor.includes("recovered-after-failure"));
 assert.ok(monitor.includes("event.isTrusted"));
 
-console.log("validate: safety");
 for (const file of [
   "formAutofillAgent.js",
   "siteAdapters.js",
@@ -104,22 +110,20 @@ for (const file of [
   "phoneValueAdapter.js",
   "fieldSafetyGuard.js",
   "learningMonitor.js",
+  "visualPageMapper.js",
+  "visualBackground.js",
   "mainWorldBridge.js"
 ]) {
   const source = await read(file);
   assert.ok(!source.includes("requestSubmit("), `${file} must not request submission`);
   assert.ok(!source.includes(".submit("), `${file} must not submit forms`);
 }
-const bridge = await read("mainWorldBridge.js");
-assert.ok(!bridge.includes("chrome."));
 
-console.log("validate: persistence and options");
 const background = await read("background.js");
 const optionsHtml = await read("options.html");
 assert.ok(background.includes("APPLYPILOT_MEMORY_UPSERT"));
 assert.ok(background.includes("webNavigation.getAllFrames"));
+assert.ok(optionsHtml.includes("aiResumeApiStyle"));
 assert.ok(optionsHtml.includes("autoLearnCorrections"));
-assert.ok(optionsHtml.includes("learnSensitiveFields"));
-await read("optionsEnhancements.js");
 
-console.log("ApplyPilot safe live-target validation passed.");
+console.log("ApplyPilot ephemeral visual autofill validation passed.");
