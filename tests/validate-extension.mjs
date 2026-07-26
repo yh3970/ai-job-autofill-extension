@@ -84,9 +84,9 @@ assert.ok(visualBackground.includes("MAX_VISUAL_TILES"));
 assert.ok(visualMapper.includes("APPLYPILOT_VISUAL_PREPARE"));
 assert.ok(visualMapper.includes("APPLYPILOT_VISUAL_APPLY"));
 assert.ok(visualMapper.includes("applypilot-visual-badge"));
-assert.ok(visualMapper.includes("profile-path-field-mismatch") === false);
+assert.ok(!visualMapper.includes("profile-path-field-mismatch"));
 assert.ok(popupHtml.includes("visualFillPage"));
-assert.ok(popupJs.includes("截图不保存"));
+assert.ok(popupHtml.includes("截图不保存"));
 assert.ok(popupJs.includes("APPLYPILOT_VISUAL_FILL"));
 
 console.log("validate: repeatable rows, learning and safety");
