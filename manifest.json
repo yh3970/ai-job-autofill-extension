@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ApplyPilot",
-  "description": "Cross-site job application autofill with strict field identity, live target recovery, monitored corrections, and reusable memory.",
-  "version": "0.6.5",
+  "description": "Cross-site job application autofill with strict DOM matching, ephemeral visual fallback, monitored corrections, and reusable memory.",
+  "version": "0.7.0",
   "permissions": ["activeTab", "storage", "scripting", "webNavigation"],
   "host_permissions": ["<all_urls>"],
   "action": {
@@ -11,7 +11,7 @@
   },
   "options_page": "options.html",
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "visualBackground.js"
   },
   "content_scripts": [
     {
@@ -37,6 +37,7 @@
         "phoneValueAdapter.js",
         "fieldSafetyGuard.js",
         "learningMonitor.js",
+        "visualPageMapper.js",
         "contentScriptV2.js"
       ],
       "run_at": "document_idle",
