@@ -19,6 +19,7 @@ jobs:
           set -euo pipefail
           for file in \
             background.js \
+            visualBackground.js \
             popup.js \
             optionsEnhancements.js \
             formScanner.js \
@@ -32,6 +33,7 @@ jobs:
             phoneValueAdapter.js \
             fieldSafetyGuard.js \
             learningMonitor.js \
+            visualPageMapper.js \
             mainWorldBridge.js \
             contentScriptV2.js; do
             node --check "$file"
