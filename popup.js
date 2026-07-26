@@ -33,7 +33,7 @@ async function init() {
 
 async function fillCurrentPage() {
   setResult("");
-  setStatus("正在按字段标签严格匹配并填写...");
+  setStatus("正在按字段标签严格匹配，并在页面重绘后重新定位字段...");
   const tab = await getActiveTab();
   const { profile, fieldMemory } = await chrome.storage.local.get(["profile", "fieldMemory"]);
   const response = await sendToBackground({
@@ -61,7 +61,7 @@ async function fillCurrentPage() {
     `已识别标签 ${diagnostics.labelledFields || 0}｜未识别标签 ${diagnostics.unlabelledFields || 0}`,
     `自动新增 ${diagnostics.repeatRowsAdded || 0} 行：教育 ${diagnostics.educationRowsAdded || 0}｜工作/实习 ${diagnostics.experienceRowsAdded || 0}｜项目 ${diagnostics.projectRowsAdded || 0}`,
     `跳过 ${diagnostics.skipped || 0}｜歧义教育字段跳过 ${diagnostics.repeatedAmbiguousSkipped || 0}｜严格安全拦截 ${safetyBlocks}`,
-    `敏感字段跳过 ${diagnostics.sensitiveSkipped || 0}｜执行失败 ${diagnostics.failed || 0}`,
+    `页面重绘后重新定位 ${diagnostics.repeatedTargetsRefreshed || 0}｜敏感字段跳过 ${diagnostics.sensitiveSkipped || 0}｜执行失败 ${diagnostics.failed || 0}`,
     coverage,
     `通用适配补填 ${diagnostics.universalFilled || 0}｜重复经历补填 ${diagnostics.repeatedFallbackFilled || 0}｜项目经历补填 ${diagnostics.projectProfileFilled || 0}｜站点适配补填 ${diagnostics.djiAdapterFilled || 0}`,
     monitorText,
@@ -157,8 +157,9 @@ function translateReason(reason) {
     "isolated-action-failed": "普通填写方式失败",
     "universal-target-not-found": "通用适配器找不到原字段",
     "universal-action-failed": "通用适配器填写失败",
-    "repeated-target-not-found": "重复经历区块中的字段已被页面替换",
+    "repeated-target-not-found": "页面重绘后仍未找到对应经历字段",
     "repeated-action-failed": "重复经历字段填写失败",
+    "existing-value-preserved": "字段已有内容，已保留而未覆盖",
     "profile-path-field-mismatch": "Profile字段与网页标签不一致，已阻止乱填",
     "repeat-add-button-not-found-education": "未找到新增教育经历按钮",
     "repeat-add-button-not-found-experience": "未找到新增工作/实习经历按钮",
