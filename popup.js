@@ -1,6 +1,7 @@
 const statusEl = document.querySelector("#status");
 const resultEl = document.querySelector("#result");
 const fillButton = document.querySelector("#fillPage");
+const visualFillButton = document.querySelector("#visualFillPage");
 const learnButton = document.querySelector("#learnPage");
 const optionsButton = document.querySelector("#openOptions");
 
@@ -9,6 +10,7 @@ init();
 async function init() {
   optionsButton.addEventListener("click", () => chrome.runtime.openOptionsPage());
   fillButton.addEventListener("click", fillCurrentPage);
+  visualFillButton.addEventListener("click", visualFillCurrentPage);
   learnButton.addEventListener("click", learnCurrentPage);
 
   const tab = await getActiveTab();
@@ -70,6 +72,47 @@ async function fillCurrentPage() {
   ].filter(Boolean).join("\n"));
 }
 
+async function visualFillCurrentPage() {
+  setResult("");
+  setStatus("正在临时标记字段、分段截图并进行视觉识别。请不要切换标签页...");
+  fillButton.disabled = true;
+  visualFillButton.disabled = true;
+  learnButton.disabled = true;
+
+  try {
+    const tab = await getActiveTab();
+    const { profile } = await chrome.storage.local.get(["profile"]);
+    const response = await sendToBackground({
+      type: "APPLYPILOT_VISUAL_FILL",
+      tabId: tab?.id,
+      profile
+    });
+
+    if (!response?.ok) {
+      setStatus(visualFailureMessage(response));
+      setResult("视觉模式只在内存中处理截图，不写入本地文件或浏览器 storage。调用视觉模型时，截图会临时发送到你配置的火山方舟 API，并请求 store=false。");
+      return;
+    }
+
+    setStatus(`视觉扫描 ${response.fieldCount || 0} 个字段，识别映射 ${response.mapped || 0} 个，已填充 ${response.filled || 0} 个。`);
+    const failurePreview = formatFailurePreview(response.uncertain || []);
+    const tileErrorText = (response.tileErrors || []).length
+      ? `有 ${response.tileErrors.length} 个截图分段识别失败；其余分段仍已继续处理。`
+      : "";
+    setResult([
+      `整页分为 ${response.tileCount || 0} 个临时截图分段，成功分析 ${response.processedTiles || 0} 个。`,
+      `映射 ${response.mapped || 0}｜填写 ${response.filled || 0}｜跳过 ${response.skipped || 0}｜失败 ${response.failed || 0}`,
+      "隐私：截图不写入文件、不写入 storage；每个分段分析后立即从内存释放；API 请求使用 store=false。",
+      tileErrorText,
+      failurePreview
+    ].filter(Boolean).join("\n"));
+  } finally {
+    fillButton.disabled = false;
+    visualFillButton.disabled = false;
+    learnButton.disabled = false;
+  }
+}
+
 async function learnCurrentPage() {
   setResult("");
   setStatus("正在把当前页面已有答案写入记忆库...");
@@ -104,6 +147,24 @@ function scanFailureMessage(response, prefix = "这个页面暂时无法扫描")
     return `${prefix}。请刷新页面，并确认不是 chrome://、扩展商店或浏览器内部页面。`;
   }
   return `${prefix}。请刷新网申页面和扩展后再试一次。`;
+}
+
+function visualFailureMessage(response) {
+  const error = String(response?.error || "");
+  const labels = {
+    "visual-ai-not-enabled": "请先在设置中启用 AI 简历解析并保存火山方舟设置。",
+    "visual-requires-responses-api": "视觉模式需要把 API 类型切换为 Responses API。",
+    "visual-api-key-empty": "视觉模式未找到 API Key。",
+    "visual-model-empty": "视觉模式未找到可用模型。",
+    "visual-tab-not-active": "视觉截图要求网申页面保持为当前活动标签页。",
+    "visual-no-fields": "当前页面没有找到可视觉标记的表单字段。",
+    "visual-scan-not-prepared": "视觉字段标记未完成，请刷新页面后重试。"
+  };
+  if (labels[error]) return labels[error];
+  if (error.includes("visual-api-failed-400")) return "视觉模型拒绝了图片输入。请在设置中改用支持图片理解的豆包多模态模型。";
+  if (error.includes("visual-api-failed-401")) return "火山方舟 API Key 无效或没有该模型权限。";
+  if (error.includes("visual-api-failed-429")) return "视觉模型调用频率或额度已达到限制，请稍后再试。";
+  return `视觉识别失败：${error || "未知错误"}`;
 }
 
 function frameAccessText(diagnostics) {
@@ -159,6 +220,8 @@ function translateReason(reason) {
     "universal-action-failed": "通用适配器填写失败",
     "repeated-target-not-found": "页面重绘后仍未找到对应经历字段",
     "repeated-action-failed": "重复经历字段填写失败",
+    "visual-target-not-found": "视觉识别后网页重绘，未找到原字段",
+    "visual-action-failed": "视觉识别正确，但网页拒绝写入",
     "existing-value-preserved": "字段已有内容，已保留而未覆盖",
     "profile-path-field-mismatch": "Profile字段与网页标签不一致，已阻止乱填",
     "repeat-add-button-not-found-education": "未找到新增教育经历按钮",
